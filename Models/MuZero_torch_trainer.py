@@ -116,7 +116,7 @@ class Trainer(object):
         target_reward_encoded, target_value_encoded = (torch.reshape(
             enc(v),
             (-1, num_target_steps,
-             config.ENCODER_NUM_STEPS)).cuda() for enc, v in ((agent.scalar_to_support, target_reward),
+             config.ENCODER_NUM_STEPS)) for enc, v in ((agent.scalar_to_support, target_reward),
                                                  (agent.scalar_to_support, target_value)))
 
         accs = collections.defaultdict(list)
@@ -130,15 +130,15 @@ class Trainer(object):
             reward_logits = prediction.reward_logits
             policy_logits = prediction.policy_logits
 
-            value_loss = (-target_value_encoded[:, tstep] *
+            value_loss = (-target_value_encoded[:, tstep].cuda() *
                           torch.nn.LogSoftmax(dim=-1)(value_logits)).sum(-1).requires_grad_(True)
             value_loss.register_hook(lambda grad: self.scale_gradient(grad, gradient_scales['value'][tstep]))
             
             accs['value_loss'].append(
               value_loss
             )
-            
-            reward_loss = (-target_reward_encoded[:, tstep] *
+
+            reward_loss = (-target_reward_encoded[:, tstep].cuda() *
                           torch.nn.LogSoftmax(dim=-1)(reward_logits)).sum(-1).requires_grad_(True)
             reward_loss.register_hook(lambda grad: self.scale_gradient(grad, gradient_scales['reward'][tstep]))
 

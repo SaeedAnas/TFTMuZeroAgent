@@ -138,14 +138,7 @@ class MuZeroNetwork(AbstractNetwork):
         hidden_state = self.representation(observation)
         policy_logits, value_logits = self.prediction(hidden_state)
 
-        reward_logits = torch.log(
-            (
-                torch.zeros(1, self.full_support_size)
-                .scatter(1, torch.tensor([[self.full_support_size // 2]]).long(), 1.0)
-                .repeat(len(observation), 1)
-                .to(observation.device)
-            )
-        )
+        reward_logits = torch.zeros(value_logits.shape).to(observation.device)
 
         value = self.support_to_scalar(value_logits)
         reward = self.support_to_scalar(reward_logits)
@@ -263,17 +256,3 @@ def mlp(
         act = activation if i < len(sizes) - 2 else output_activation
         layers += [torch.nn.Linear(sizes[i], sizes[i + 1]), act()]
     return torch.nn.Sequential(*layers).cuda()
-
-
-
-
-
-# From the MuZero paper.
-def contractive_mapping(x, eps=0.001):
-    return np.sign(x) * (np.sqrt(np.abs(x) + 1.) - 1.) + eps * x
-
-
-# From the MuZero paper.
-def inverse_contractive_mapping(x, eps=0.001):
-    return np.sign(x) * \
-           (np.square((np.sqrt(4 * eps * (np.abs(x) + 1. + eps) + 1.) - 1.) / (2. * eps)) - 1.)
