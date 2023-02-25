@@ -35,8 +35,8 @@ class MCTS:
             network_output = self.network.initial_inference(observation[0])
             # print("initial inference took: {}".format(time.time_ns() - self.ckpt_time))
 
-            reward_pool = np.array(network_output["reward"]).reshape(-1).tolist()
-            policy_logits = network_output["policy_logits"]
+            reward_pool = np.array(network_output["reward"].cpu()).reshape(-1).tolist()
+            policy_logits = network_output["policy_logits"].cpu().numpy()
 
             # 0.01 seconds
             policy_logits_pool, mappings, string_mapping = self.encode_action_to_str(policy_logits, observation[1])
@@ -128,11 +128,11 @@ class MCTS:
             # 0.003 seconds
             network_output = self.network.recurrent_inference(tensors_states, last_action)
 
-            reward_pool = np.array(network_output["reward"]).reshape(-1).tolist()
-            value_pool = np.array(network_output["value"]).reshape(-1).tolist()
+            reward_pool = np.array(network_output["reward"].cpu().numpy()).reshape(-1).tolist()
+            value_pool = np.array(network_output["value"].cpu().numpy()).reshape(-1).tolist()
 
             # 0.002 seconds
-            policy_logits, _, mappings, _ = self.sample(network_output["policy_logits"].numpy(),
+            policy_logits, _, mappings, _ = self.sample(network_output["policy_logits"].cpu().numpy(),
                                                         self.default_string_mapping, self.default_byte_mapping,
                                                         config.NUM_SAMPLES)
             # These assignments take 0.0001 > time

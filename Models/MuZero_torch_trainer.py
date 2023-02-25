@@ -50,12 +50,11 @@ class Trainer(object):
 
     def compute_loss(self, agent, observation, history, target_value_mask, target_reward_mask, target_policy_mask,
                      target_value, target_reward, target_policy, train_step, summary_writer):
-
-        target_value_mask = torch.from_numpy(target_value_mask)
-        target_reward_mask = torch.from_numpy(target_reward_mask)
-        target_policy_mask = torch.from_numpy(target_policy_mask)
-        target_reward = torch.from_numpy(target_reward)
-        target_value = torch.from_numpy(target_value)
+        target_value_mask = torch.from_numpy(target_value_mask).cuda()
+        target_reward_mask = torch.from_numpy(target_reward_mask).cuda()
+        target_policy_mask = torch.from_numpy(target_policy_mask).cuda()
+        target_reward = torch.from_numpy(target_reward).cuda()
+        target_value = torch.from_numpy(target_value).cuda()
 
         # initial step
         output = agent.initial_inference(observation)
@@ -115,23 +114,21 @@ class Trainer(object):
         }
 
         target_reward_encoded, target_value_encoded = (torch.reshape(
-            enc.encode(torch.reshape(v, (-1,))),
+            enc(v),
             (-1, num_target_steps,
-             int(enc.num_steps))) for enc, v in ((agent.reward_encoder, target_reward),
-                                                 (agent.value_encoder, target_value)))
-
+             config.ENCODER_NUM_STEPS)).cuda() for enc, v in ((agent.scalar_to_support, target_reward),
+                                                 (agent.scalar_to_support, target_value)))
 
         accs = collections.defaultdict(list)
         for tstep, prediction in enumerate(predictions):
             # prediction.value_logits is [batch_size, 601]
 
             # TODO: Possibly keep them as tensors in the inference functions
-            value = torch.from_numpy(prediction.value)
-            reward = torch.from_numpy(prediction.reward)
-            value_logits = torch.from_numpy(prediction.value_logits)
-            reward_logits = torch.from_numpy(prediction.reward_logits)
-            policy_logits = prediction.policy_logits if torch.is_tensor(prediction.policy_logits) \
-                else torch.tensor(prediction.policy_logits)
+            value = prediction.value
+            reward = prediction.reward
+            value_logits = prediction.value_logits
+            reward_logits = prediction.reward_logits
+            policy_logits = prediction.policy_logits
 
             value_loss = (-target_value_encoded[:, tstep] *
                           torch.nn.LogSoftmax(dim=-1)(value_logits)).sum(-1).requires_grad_(True)
@@ -157,7 +154,7 @@ class Trainer(object):
             #     logits = logits, dtype=float), reinterpreted_batch_ndims=1).entropy()
             #     * config.policy_loss_entropy_regularizer
 
-            policy_loss = (-torch.tensor([i[tstep] for i in target_policy]) *
+            policy_loss = (-torch.tensor([i[tstep] for i in target_policy]).cuda() *
                           torch.nn.LogSoftmax(dim=-1)(policy_logits)).sum(-1).requires_grad_(True)
             policy_loss.register_hook(lambda grad: self.scale_gradient(grad, gradient_scales['policy'][tstep]))
 
@@ -176,8 +173,8 @@ class Trainer(object):
             #         target_policy[:, tstep],
             #         tf.nn.softmax(prediction.policy_logits, axis=-1)))
 
-            accs['value'].append(torch.squeeze(value))
-            accs['reward'].append(torch.squeeze(reward))
+            accs['value'].append(torch.squeeze(value).cuda())
+            accs['reward'].append(torch.squeeze(reward).cuda())
             # accs['action'].append(
             #     tf.cast(tf.argmax(prediction.policy_logits, -1), tf.float32))
 

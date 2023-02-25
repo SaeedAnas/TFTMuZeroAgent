@@ -82,17 +82,12 @@ class MuZeroNetwork(AbstractNetwork):
         self.prediction_value_network = mlp(config.LAYER_HIDDEN_SIZE, [config.HEAD_HIDDEN_SIZE] *
                                             config.N_HEAD_HIDDEN_LAYERS, self.full_support_size)
 
-        self.value_encoder = ValueEncoder(*tuple(map(inverse_contractive_mapping, (-300., 300.))), 0)
-
-        self.reward_encoder = ValueEncoder(*tuple(map(inverse_contractive_mapping, (-300., 300.))), 0)
-
     def prediction(self, encoded_state):
         policy_logits = self.prediction_policy_network(encoded_state)
         value = self.prediction_value_network(encoded_state)
         return policy_logits, value
 
     def representation(self, observation):
-        observation = torch.from_numpy(observation).float().cuda()
         encoded_state = self.representation_network(observation)
         # Scale encoded state between [0, 1] (See appendix paper Training)
         min_encoded_state = encoded_state.min(1, keepdim=True)[0]
@@ -139,16 +134,21 @@ class MuZeroNetwork(AbstractNetwork):
         return next_encoded_state_normalized, reward
 
     def initial_inference(self, observation):
+        observation = torch.from_numpy(observation).float().cuda()
         hidden_state = self.representation(observation)
         policy_logits, value_logits = self.prediction(hidden_state)
 
-        reward = np.zeros(observation.shape[0])
+        reward_logits = torch.log(
+            (
+                torch.zeros(1, self.full_support_size)
+                .scatter(1, torch.tensor([[self.full_support_size // 2]]).long(), 1.0)
+                .repeat(len(observation), 1)
+                .to(observation.device)
+            )
+        )
 
-        value = self.value_encoder.decode(torch.softmax(value_logits, dim=-1).detach().cpu().numpy())
-        reward_logits = self.reward_encoder.encode(reward)
-
-        value_logits = value_logits.detach().cpu().numpy()
-        policy_logits = policy_logits.detach().cpu().numpy()
+        value = self.support_to_scalar(value_logits)
+        reward = self.support_to_scalar(reward_logits)
 
         outputs = {
             "value": value,
@@ -185,13 +185,8 @@ class MuZeroNetwork(AbstractNetwork):
         hidden_state, reward_logits = self.dynamics(encoded_state, action)
         policy_logits, value_logits = self.prediction(hidden_state)
 
-        value = self.value_encoder.decode(torch.softmax(value_logits, dim=-1).detach().cpu().numpy())
-        reward = self.reward_encoder.decode(torch.softmax(reward_logits, dim=-1).detach().cpu().numpy())
-
-        value_logits = value_logits.detach().cpu().numpy()
-        reward_logits = reward_logits.detach().cpu().numpy()
-
-        policy_logits = policy_logits.detach().cpu()
+        value = self.support_to_scalar(value_logits)
+        reward = self.support_to_scalar(reward_logits)
 
         outputs = {
             "value": value,
@@ -202,6 +197,57 @@ class MuZeroNetwork(AbstractNetwork):
             "hidden_state": hidden_state
         }
         return outputs
+
+    @staticmethod
+    def scalar_to_support(x, support_size=config.ENCODER_NUM_STEPS):
+        """
+        Transform a scalar to a categorical representation with (2 * support_size + 1) categories
+        See paper appendix Network Architecture
+        """
+        support_size = support_size // 2
+
+        # Reduce the scale (defined in https://arxiv.org/abs/1805.11593)
+        x = torch.sign(x) * (torch.sqrt(torch.abs(x) + 1) - 1) + 0.001 * x
+
+        # Encode on a vector
+        x = torch.clamp(x, -support_size, support_size)
+        floor = x.floor()
+        prob = x - floor
+        logits = torch.zeros(x.shape[0], x.shape[1], 2 * support_size + 1).to(x.device)
+        logits.scatter_(
+            2, (floor + support_size).long().unsqueeze(-1), (1 - prob).unsqueeze(-1)
+        )
+        indexes = floor + support_size + 1
+        prob = prob.masked_fill_(2 * support_size < indexes, 0.0)
+        indexes = indexes.masked_fill_(2 * support_size < indexes, 0.0)
+        logits.scatter_(2, indexes.long().unsqueeze(-1), prob.unsqueeze(-1))
+        return logits
+
+    @staticmethod
+    def support_to_scalar(logits, support_size=config.ENCODER_NUM_STEPS):
+        """
+        Transform a categorical representation to a scalar
+        See paper appendix Network Architecture
+        """
+        # Decode to a scalar
+        support_size = support_size // 2
+
+        probabilities = torch.softmax(logits, dim=1)
+        support = (
+            torch.tensor([x for x in range(-support_size, support_size + 1)])
+            .expand(probabilities.shape)
+            .float()
+            .to(device=probabilities.device)
+        )
+        x = torch.sum(support * probabilities, dim=1, keepdim=True)
+
+        # Invert the scaling (defined in https://arxiv.org/abs/1805.11593)
+        x = torch.sign(x) * (
+                ((torch.sqrt(1 + 4 * 0.001 * (torch.abs(x) + 1 + 0.001)) - 1) / (2 * 0.001))
+                ** 2
+                - 1
+        )
+        return x
 
 
 def mlp(
@@ -219,67 +265,7 @@ def mlp(
     return torch.nn.Sequential(*layers).cuda()
 
 
-class ValueEncoder:
-    """Encoder for reward and value targets from Appendix of MuZero Paper."""
 
-    def __init__(self,
-                 min_value,
-                 max_value,
-                 num_steps,
-                 use_contractive_mapping=True):
-        if not max_value > min_value:
-            raise ValueError('max_value must be > min_value')
-        min_value = float(min_value)
-        max_value = float(max_value)
-        if use_contractive_mapping:
-            max_value = contractive_mapping(max_value)
-            min_value = contractive_mapping(min_value)
-        if num_steps <= 0:
-            num_steps = np.ceil(max_value) + 1 - np.floor(min_value)
-        self.min_value = min_value
-        self.max_value = max_value
-        self.value_range = max_value - min_value
-        self.num_steps = num_steps
-        self.step_size = self.value_range / (num_steps - 1)
-        self.step_range_int = np.arange(0, self.num_steps, dtype=int)
-        self.step_range_float = self.step_range_int.astype(float)
-        self.use_contractive_mapping = use_contractive_mapping
-
-    def encode(self, value):  # not worth optimizing
-        if len(value.shape) != 1:
-            raise ValueError(
-                'Expected value to be 1D Tensor [batch_size], but got {}.'.format(
-                    value.shape))
-        if self.use_contractive_mapping:
-            value = contractive_mapping(value)
-        value = np.expand_dims(value, -1)
-        clipped_value = np.clip(value, self.min_value, self.max_value)
-        above_min = clipped_value - self.min_value
-        num_steps = above_min / self.step_size
-        lower_step = np.floor(num_steps)
-        upper_mod = num_steps - lower_step
-        lower_step = lower_step.astype(int)
-        upper_step = lower_step + 1
-        lower_mod = 1.0 - upper_mod
-        lower_encoding, upper_encoding = (
-            np.equal(step, self.step_range_int).astype(float) * mod
-            for step, mod in (
-                (lower_step, lower_mod),
-                (upper_step, upper_mod),)
-        )
-        return lower_encoding + upper_encoding
-
-    def decode(self, logits):  # not worth optimizing
-        if len(logits.shape) != 2:
-            raise ValueError(
-                'Expected logits to be 2D Tensor [batch_size, steps], but got {}.'
-                .format(logits.shape))
-        num_steps = np.sum(logits * self.step_range_float, -1)
-        above_min = num_steps * self.step_size
-        value = above_min + self.min_value
-        if self.use_contractive_mapping:
-            value = inverse_contractive_mapping(value)
-        return value
 
 
 # From the MuZero paper.
