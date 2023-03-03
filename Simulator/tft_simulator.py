@@ -198,6 +198,10 @@ class TFT_Simulator(AECEnv):
             self.observations[agent] = self.game_observations[agent].observation(
                 agent, self.PLAYERS[agent], self.PLAYERS[agent].action_vector)
 
+        for agent in self.agents:
+            self.observations[agent] = self.game_observations[agent].observation(
+                agent, self.PLAYERS[agent], self.PLAYERS[agent].action_vector)
+            
         # Also called in many environments but the line above this does the same thing but better
         # self._accumulate_rewards()
         if self._agent_selector.is_last():
