@@ -2,12 +2,8 @@ import config
 import numpy as np
 import time
 
-if config.ARCHITECTURE == 'Pytorch':
-    from Models.MCTS_torch import MCTS
-    from Models.MuZero_torch_agent import MuZeroNetwork as TFTNetwork
-else:
-    from Models.MCTS import MCTS
-    from Models.MuZero_keras_agent import TFTNetwork
+from Models.MCTS_torch import MCTS
+from Models.MuZero_torch_agent import MuZeroNetwork as TFTNetwork
  
 from Simulator.tft_simulator import parallel_env
 from Simulator import utils
@@ -29,32 +25,35 @@ def main():
 
     # action_queue = asyncio.Queue()
     action_queue = queue.Queue()
+    actions_taken = 0
 
     while not all (terminated.values()):
-        start = time.time()
-        actions = {agent: 0 for agent in players.keys()}
         for key, agent in players.items():
             action, _ = agent.policy(player_observation[key])
             action = decode_action_to_one_hot(action[0], key)
-            actions[key] = action
+            action = {"type": "player", "player_id": key, "action": action}
             action_queue.put(action)
             # await action_queue.put(action)
             
         while not queue.empty():
-           next_observation, reward, terminated, _, info = game.step(queue.get())
+           action = queue.get()
+           print(action)
+           next_observation, _, terminated, _, info = game.step(action)
+           player_observation = separate_observation_to_input(next_observation)
+           # Broadcast changes
+           
+        actions_taken += 1
+        if actions_taken == 15:
+           actions_taken = 0
+           action = {"type": "env"}
+           print(action)
+           next_observation, _, terminated, _, info = game.step(action)
 
-        next_observation, reward, terminated, _, info = game.step(actions)
-
-        player_observation = separate_observation_to_input(next_observation)
         for key, terminate in terminated.items():
           if terminate:
             print(f'{key} has died!')
             del players[key]
   
-        print('next turn')
-        end = time.time()
-        print(f'turn ended: {end - start}')
-
     for key, value in info.items():
       if value["player_won"]:
         print(f"{key} has won!")

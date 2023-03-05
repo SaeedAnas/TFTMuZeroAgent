@@ -203,17 +203,17 @@ class TFT_Parallel_Simulator(AECEnv):
                 self.terminations = {a: True for a in self.agents}
                 
             self.infos = {a: {"state_empty": False} for a in self.agents}
-
+            
+            _live_agents = self.agents[:]
+            for k in self.kill_list:
+                self.terminations[k] = True
+                _live_agents.remove(k)
+                self.rewards[k] = (3 - len(_live_agents)) * 2.5 - 1.25
+                self._cumulative_rewards[k] = self.rewards[k]
+        
         for agent in self.agents:
             self.observations[agent] = self.game_observations[agent].observation(
                 agent, self.PLAYERS[agent], self.PLAYERS[agent].action_vector)
 
 
-        
         return self.observations, self.rewards, self.terminations, self.truncations, self.infos
-
-        
-
-
-        
-
