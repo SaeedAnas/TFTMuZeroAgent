@@ -21,15 +21,11 @@ def env():
     """
     local_env = TFT_Simulator(env_config=None)
 
-    # Provides a wide vareity of helpful user errors
-    # Strongly recommended
-    local_env = wrappers.OrderEnforcingWrapper(local_env)
     return local_env
     
 parallel_env = parallel_wrapper_fn(env)
-regular_env = env()
 
-class TFT_Parallel_Simulator(AECEnv):
+class TFT_Simulator(AECEnv):
     metadata = {"is_parallelizable": True, "name": "tft-set4-v0"}
 
     def __init__(self, env_config):
@@ -63,8 +59,8 @@ class TFT_Parallel_Simulator(AECEnv):
         self.agent_name_mapping = dict(
             zip(self.possible_agents, list(range(len(self.possible_agents))))
         )
-        # self._agent_selector = agent_selector(self.possible_agents)
-        # self.agent_selection = self.possible_agents[0]
+        self._agent_selector = agent_selector(self.possible_agents)
+        self.agent_selection = self.possible_agents[0]
         
         self.rewards = {agent: 0 for agent in self.agents}
         self._cumulative_rewards = {agent: 0 for agent in self.agents}
@@ -115,12 +111,19 @@ class TFT_Parallel_Simulator(AECEnv):
                     self.PLAYERS[key] = None
                     self.kill_list.append(key)
                     self.game_round.update_players(self.PLAYERS)
+                    print(f'{key} died!')
                 else:
                     num_alive += 1
         return num_alive
         
     def observe(self, player_id):
         return self.observations[player_id]
+    
+    def get_game_state(self):
+        game_state = {"game_state": "game_state"}
+        
+        return game_state
+
         
     def reset(self, seed=None, options=None):
         self.pool_obj = pool.pool()
@@ -158,10 +161,12 @@ class TFT_Parallel_Simulator(AECEnv):
         self.observations = {agent: self.game_observations[agent].observation(
             agent, self.PLAYERS[agent], self.PLAYERS[agent].action_vector) 
                              for agent in self.agents}
+
+        self.game_state = self.get_game_state()
                              
         super().__init__()
-        return self.observations
-        
+        return self.observations, self.game_state
+    
     def close(self):
         self.reset()
         
@@ -183,14 +188,17 @@ class TFT_Parallel_Simulator(AECEnv):
         
             # if we don't use this, the rewards will compound per step
             self._clear_rewards()
-            self.infos[self.agent_selection] = {"state_empty": self.PLAYERS[self.agent_selection].state_empty()}
+            self.infos[player_id] = {"state_empty": self.PLAYERS[player_id].state_empty()}
         
-            self.terminations = {a: False for a in self.agents}
-            self.truncations = {a: False for a in self.agents}
+            # self.terminations = {a: False for a in self.agents}
+            # self.truncations = {a: False for a in self.agents}
 
         elif action_type == "env":
             self.game_round.play_game_round()
+
+            self.infos = {a: {"state_empty": False} for a in self.agents}
             
+                
             if self.check_dead() == 1 or self.game_round.current_round > 48:
                 # Anyone left alive (should only be 1 player unless time limit) wins the game
                 for player_id in self.agents:
@@ -199,21 +207,23 @@ class TFT_Parallel_Simulator(AECEnv):
                         self.rewards[player_id] = 300
                         self._cumulative_rewards[player_id] = self.rewards[player_id]
                         self.PLAYERS[player_id] = None
+                        self.infos[player_id] = { "player_won": True }
+                    else:
+                        self.infos[player_id] = { "player_won": False }
                 
                 self.terminations = {a: True for a in self.agents}
                 
-            self.infos = {a: {"state_empty": False} for a in self.agents}
             
             _live_agents = self.agents[:]
             for k in self.kill_list:
                 self.terminations[k] = True
-                _live_agents.remove(k)
                 self.rewards[k] = (3 - len(_live_agents)) * 2.5 - 1.25
                 self._cumulative_rewards[k] = self.rewards[k]
         
         for agent in self.agents:
-            self.observations[agent] = self.game_observations[agent].observation(
-                agent, self.PLAYERS[agent], self.PLAYERS[agent].action_vector)
+            if not self.terminations[agent]:
+                self.observations[agent] = self.game_observations[agent].observation(
+                      agent, self.PLAYERS[agent], self.PLAYERS[agent].action_vector)
 
 
         return self.observations, self.rewards, self.terminations, self.truncations, self.infos

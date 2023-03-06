@@ -5,7 +5,7 @@ import time
 from Models.MCTS_torch import MCTS
 from Models.MuZero_torch_agent import MuZeroNetwork as TFTNetwork
  
-from Simulator.tft_simulator import parallel_env
+from Simulator.tft_ui_simulator import env
 from Simulator import utils
 import queue
 
@@ -14,11 +14,10 @@ def main():
     global_agent = MCTS(TFTNetwork())
     players = {f"player_{i}": global_agent for i in range(config.NUM_PLAYERS)}
 
-    game = parallel_env()
+    game = env()
     
     player_observation = game.reset()
-    print(player_observation)
-    print(len(player_observation))
+
     player_observation = separate_observation_to_input(player_observation)
     
     terminated = {player_id: False for player_id in game.possible_agents}
@@ -29,32 +28,31 @@ def main():
 
     while not all (terminated.values()):
         for key, agent in players.items():
-            action, _ = agent.policy(player_observation[key])
-            action = decode_action_to_one_hot(action[0], key)
-            action = {"type": "player", "player_id": key, "action": action}
-            action_queue.put(action)
+            if not terminated[key]:
+                action, _, _ = agent.policy(player_observation[key])
+                action = decode_action_to_one_hot(action[0], key)
+                action = {"type": "player", "player_id": key, "action": action}
+                action_queue.put(action)
             # await action_queue.put(action)
-            
-        while not queue.empty():
-           action = queue.get()
-           print(action)
+        
+        print(action_queue.qsize())
+        while not action_queue.empty():
+           action = action_queue.get()
+           print(action["player_id"])
            next_observation, _, terminated, _, info = game.step(action)
            player_observation = separate_observation_to_input(next_observation)
            # Broadcast changes
            
         actions_taken += 1
-        if actions_taken == 15:
+        if actions_taken == 3:
            actions_taken = 0
            action = {"type": "env"}
            print(action)
            next_observation, _, terminated, _, info = game.step(action)
-
-        for key, terminate in terminated.items():
-          if terminate:
-            print(f'{key} has died!')
-            del players[key]
+           player_observation = separate_observation_to_input(next_observation)
   
     for key, value in info.items():
+      print(value)
       if value["player_won"]:
         print(f"{key} has won!")
 
