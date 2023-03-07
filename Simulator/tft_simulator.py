@@ -27,12 +27,22 @@ def env():
     local_env = wrappers.OrderEnforcingWrapper(local_env)
     return local_env
 
+def raw_env(config=None):
+    if config is None:
+        config = {
+            "parallel": False,
+            "store_state": True,
+            "round_type": "timer"
+        }
+    
+    return TFT_Simulator(env_config=config)
 
 parallel_env = parallel_wrapper_fn(env)
 
 
 class TFT_Simulator(AECEnv):
     metadata = {"is_parallelizable": True, "name": "tft-set4-v0"}
+    default_config = {"parallel": True, "store_state": False, "round_type": "num_steps"}
 
     def __init__(self, env_config):
         self.pool_obj = pool.pool()
@@ -102,7 +112,17 @@ class TFT_Simulator(AECEnv):
         # For PPO
         self.action_spaces = {agent: MultiDiscrete(np.ones(config.ACTION_DIM))
                               for agent in self.agents}
+        
+        self.load_config(env_config)
+
         super().__init__()
+        
+    def load_config(self, env_config):
+        if env_config:
+            self.default_config.update(env_config)
+        
+        self.parallel = self.default_config["parallel"] 
+        self.store_state = self.default_config["store_state"] 
 
     @functools.lru_cache(maxsize=None)
     def observation_space(self, agent):
@@ -170,11 +190,19 @@ class TFT_Simulator(AECEnv):
 
     def render(self):
         ...
+        
+    def state(self):
+        ...
 
     def close(self):
         self.reset()
 
     def step(self, action):
+        # Get current agent to take an action with
+        # If self.parallel : use the agent_selector
+        # Else use the agent provided in the action
+
+
         # step for dead agents
         if self.terminations[self.agent_selection]:
             self._was_dead_step(action)
@@ -194,9 +222,6 @@ class TFT_Simulator(AECEnv):
 
         self.terminations = {a: False for a in self.agents}
         self.truncations = {a: False for a in self.agents}
-        for agent in self.agents:
-            self.observations[agent] = self.game_observations[agent].observation(
-                agent, self.PLAYERS[agent], self.PLAYERS[agent].action_vector)
             
         # Also called in many environments but the line above this does the same thing but better
         # self._accumulate_rewards()
@@ -208,10 +233,6 @@ class TFT_Simulator(AECEnv):
                 # Take a game action and reset actions taken
                 self.actions_taken = 0
                 self.game_round.play_game_round()
-
-                for agent in self.agents:
-                    self.observations[agent] = self.game_observations[agent].observation(
-                        agent, self.PLAYERS[agent], self.PLAYERS[agent].action_vector)
 
                 # Check if the game is over
                 if self.check_dead() == 1 or self.game_round.current_round > 48:
@@ -226,6 +247,10 @@ class TFT_Simulator(AECEnv):
                     self.terminations = {a: True for a in self.agents}
 
                 self.infos = {a: {"state_empty": False} for a in self.agents}
+            
+            for agent in self.agents:
+                self.observations[agent] = self.game_observations[agent].observation(
+                    agent, self.PLAYERS[agent], self.PLAYERS[agent].action_vector)
 
             _live_agents = self.agents[:]
             for k in self.kill_list:
@@ -249,3 +274,6 @@ class TFT_Simulator(AECEnv):
         # Probably not needed but doesn't hurt?
         self._deads_step_first()
         return self.observations, self.rewards, self.terminations, self.truncations, self.infos
+
+    # def step2(self, action):
+        # Check so that you can't have terminated players play a move

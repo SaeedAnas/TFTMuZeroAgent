@@ -6,10 +6,11 @@ import logging
 
 import config
 import numpy as np
+import queue
 
 from Models.MCTS_torch import MCTS
 from Models.MuZero_torch_agent import MuZeroNetwork as TFTNetwork
-from Simulator.tft_ui_simulator import env
+from Simulator.tft_simulator import raw_env
 from Simulator import utils
 
 logging.basicConfig(filename='server.log', level=logging.DEBUG)
@@ -68,7 +69,7 @@ def init_players(connected):
     return players, humans, bots
             
 def init_game():
-    game = env()
+    game = raw_env()
 
     first_observation, first_state = game.reset()
     
@@ -76,9 +77,8 @@ def init_game():
     
     return game, first_observation, first_state
 
-async def game_loop(q, game, obs_context, act_context):
-    terminated = obs_context.access('terminated')
-
+async def game_loop(q, c, game, obs_context, act_context):
+    terminated = await obs_context.access('terminated')
     while not all(terminated.values()):
         item = await q.get()
         if item["type"] == "player":
@@ -87,14 +87,20 @@ async def game_loop(q, game, obs_context, act_context):
         next_observation, _, terminated, _, info = game.step(item)
         next_observation = separate_observation_to_input(next_observation)
 
-        obs_context.update(obs=next_observation, terminated=terminated)
+        await obs_context.update(obs=next_observation, terminated=terminated)
         
         if item["type"] == "env":
-            act_context.update(action_count=0)
+            await act_context.update(action_count=0)
+            
+        if item["type"] == "player":
+            await c.broadcast(f"{item['player_id']} has made a move")
+        elif item["type"] == "env":
+            await c.broadcast("round changed")
             
     for key, value in info.items():
         if value["player_won"]:
             print(f"{key} has won!")
+            await c.broadcast(f"{key} has won!")
         
     # Broadcast changes
     # Update observation
@@ -117,37 +123,46 @@ class Context:
         self.__dict__.update(kwargs)
         self.lock = asyncio.Lock()
         
-    def access(self, *attr_names):
-        with self.lock:
-            if len(attr_names) == 0:
+    async def access(self, *attr_names):
+        async with self.lock:
+            if len(attr_names) == 1:
                 return getattr(self, attr_names[0])
 
             return [getattr(self, name) for name in attr_names]
         
-    def update(self, **kwargs):
-        with self.lock:
+    async def update(self, **kwargs):
+        async with self.lock:
             for name, value in kwargs.items():
                 setattr(self, name, value)
+                
+
+class ConnectionContext(Context):
+    def __init__(self, connected):
+        super().__init__(connected=connected)
     
+    async def broadcast(self, message):
+        async with self.lock:
+            websockets.broadcast(self.connected, message)
+           
         
-async def bot_loop(q, bots, obs_context, act_context):
-    terminated = obs_context.access('terminated')
+async def bot_loop(q, c, bots, obs_context, act_context):
+    terminated = await obs_context.access('terminated')
 
     while not all(terminated.values()):
-        action_count = act_context.access('action_count')
+        action_count = await act_context.access('action_count')
         if action_count != config.ACTIONS_PER_TURN:
             for key, agent in bots.items():
-                player_observation, terminated = obs_context.access('obs', 'terminated')
+                player_observation, terminated = await obs_context.access('obs', 'terminated')
                 if not terminated[key]:
                     action, _, _ = agent.policy(player_observation[key])
                     action = {"type": "player", "player_id": key, "action": action[0]}
                     await q.put(action)
-            act_context.update(action_count=action_count + 1)
+            await act_context.update(action_count=action_count + 1)
         else:
-            asyncio.sleep(0.5)
+            await asyncio.sleep(2)
 
 
-async def round_timer(q):
+async def round_timer(q, c):
     while True:
         await asyncio.sleep(30)
         await q.put({"type": "env"})
@@ -162,18 +177,24 @@ async def start_game(websocket, connected):
     
     obs_context = Context(obs=player_observation, terminated=terminated)
     act_context = Context(action_count=0)
-    
     q = asyncio.Queue()
+    c = ConnectionContext(connected)
     
-    game_task = asyncio.create_task(game_loop(q, game, obs_context, act_context))
-    bot_task = asyncio.create_task(bot_loop(q, bots, obs_context, act_context))
-    round_task = asyncio.create_task(round_timer(q))
+    # game_task = asyncio.create_task(game_loop(q, connected, game, obs_context, act_context))
+    # bot_task = asyncio.create_task(bot_loop(q, connected, bots, obs_context, act_context))
+    # round_task = asyncio.create_task(round_timer(q, connected))
+
+    # player_tasks = [asyncio.create_task(humans[k].handle_message(q)) for k in humans.keys()]
     
-    player_tasks = [asyncio.create_task(humans[k].handle_message(q)) for k in humans.keys()]
-    
-    websockets.broadcast(connected, "starting game!")
+    await c.broadcast("starting game!")
     done, pending = await asyncio.wait(
-        [game_task, bot_task, round_task, *player_tasks],
+        [
+            game_loop(q, c, game, obs_context, act_context),
+            bot_loop(q, c, bots, obs_context, act_context),
+            round_timer(q, c),
+             *[humans[k].handle_message(q) for k in humans.keys()]
+        ],
+        # [game_task, bot_task, round_task, *player_tasks],
         return_when=asyncio.FIRST_COMPLETED,
     )
     for task in pending:
@@ -224,9 +245,6 @@ async def handler(websocket):
 async def main():
     async with websockets.serve(handler, "", 8001):
         await asyncio.Future()
-        
-if __name__ == "__main__":
-    asyncio.run(main())
 
 def separate_observation_to_input(observation):
   observations = {}
@@ -259,3 +277,7 @@ def decode_action_to_one_hot(str_action):
         decoded_action[6:44] = utils.one_hot_encode_number(element_list[1], 38)
         decoded_action[44:54] = utils.one_hot_encode_number(element_list[2], 10)
     return decoded_action
+
+        
+if __name__ == "__main__":
+    asyncio.run(main())

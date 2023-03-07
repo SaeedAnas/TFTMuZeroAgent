@@ -20,9 +20,14 @@ def env():
     elsewhere in the developer pettingzoo documentation.
     """
     local_env = TFT_Simulator(env_config=None)
+    
+    local_env = wrappers.OrderEnforcingWrapper(local_env)
 
     return local_env
-    
+
+def raw_env():
+    return TFT_Simulator(env_config=None)    
+
 parallel_env = parallel_wrapper_fn(env)
 
 class TFT_Simulator(AECEnv):
