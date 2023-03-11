@@ -2,8 +2,6 @@
 #include "cnode.h"
 
 namespace tree {
-    const std::vector<char*> default_mapping = create_default_mapping();
-
     CSearchResults::CSearchResults() {
         this->num = 0;
     }
@@ -26,7 +24,7 @@ namespace tree {
         this->value_sum = 0;
         this->reward = 0.0;
         this->ptr_node_pool = nullptr;
-        this->mappings = default_mapping;
+        this->mappings = std::vector<char*>{};
     }
 
     CNode::CNode(float prior, std::vector<CNode>* ptr_node_pool) {
@@ -38,7 +36,7 @@ namespace tree {
         this->ptr_node_pool = ptr_node_pool;
         this->hidden_state_index_x = -1;
         this->hidden_state_index_y = -1;
-        this->mappings = default_mapping;
+        this->mappings = std::vector<char*>{};
     }
 
     CNode::~CNode() {}
@@ -132,7 +130,7 @@ namespace tree {
         return distribution;
     }
 
-    CNode* CNode::get_child(int action){
+    CNode* CNode::get_child(int action) {
         int index = this->children_index[action];
         return &((*(this->ptr_node_pool))[index]);
     }
@@ -157,7 +155,7 @@ namespace tree {
         this->node_pools.reserve(root_num);
         this->roots.reserve(root_num);
 
-        for(int i = 0; i < root_num; ++i){
+        for(int i = 0; i < root_num; ++i) {
             this->node_pools.push_back(std::vector<CNode>());
             this->node_pools[i].reserve(pool_size);
 
@@ -209,77 +207,19 @@ namespace tree {
         std::string action(str_action);
         size_t index = action.find("_");
         std::vector<int> element_list;
-        while (index != std::string::npos){
-            std::string newstr = action.substr(index-1,1);
+        while(index != std::string::npos) {
+            std::string newstr = action.substr(index - 1, 1);
             element_list.push_back(std::stoi(newstr));
-            index = action.find("_",index+1);
+            index = action.find("_", index + 1);
         }
-        if (index != std::string::npos){
-            std::string newstr = action.substr(index+1,1);
+        if(index != std::string::npos) {
+            std::string newstr = action.substr(index + 1, 1);
             element_list.push_back(std::stoi(newstr));
         }
         while(element_list.size() < 3) {
             element_list.push_back(0);
         }
         return element_list;
-    }
-
-    std::vector<char*> create_default_mapping() {
-        std::vector<char*> mapping = std::vector<char*>{};
-        // mapping.reserve(1081);
-        std::string zero = "0";
-        char *copyzero = new char[strlen(&zero[0]) + 1];
-        strcpy(copyzero, &zero[0]);
-        mapping.push_back(copyzero);
-
-        // Default encodings for the shop.
-        for(int i = 0; i < 5; i++) {
-            // Create the string that we want to add to the list
-            std::string str = "1_" + std::to_string(i);
-            // Allocate some memory for the list to live in
-            char *copy = new char[strlen(&str[0]) + 1];
-            // Copy our string to the allocated memory
-            strcpy(copy, &str[0]);
-            // Add it to the array.
-            // If we don't allocate the memory, it will only push copies of the same string.
-            mapping.push_back(copy);
-        }
-
-        // Default encodings for the move / sell board / bench
-        for(int a = 0; a < 37; a++) {
-            for(int b = a; b < 38; b++) {
-                if(a == b) {
-                    continue;
-                }
-                if((a > 27) && (b != 38)) {
-                    continue;
-                }
-                std::string str = "2_" + std::to_string(a) + "_" + std::to_string(b);
-                char *copy = new char[strlen(&str[0]) + 1];
-                strcpy(copy, &str[0]);
-                mapping.push_back(copy);
-            }
-        }
-
-        // Default encodings for the move item
-        for(int a = 0; a < 37; a++) {
-            for(int b = 0; b < 10; b++) {
-                std::string str = "3_" + std::to_string(a) + "_" + std::to_string(b);
-                char *copy = new char[strlen(&str[0]) + 1];
-                strcpy(copy, &str[0]);
-                mapping.push_back(copy);
-            }
-        }
-        std::string four = "4";
-        char *copyfour = new char[strlen(&four[0]) + 1];
-        strcpy(copyfour, &four[0]);
-        mapping.push_back(copyfour);
-        std::string five = "5";
-        char *copyfive = new char[strlen(&five[0]) + 1];
-        strcpy(copyfive, &five[0]);
-        mapping.push_back(copyfive);
-        
-        return mapping;
     }
 
     void cback_propagate(std::vector<CNode*> &search_path, tools::CMinMaxStats &min_max_stats, float value,

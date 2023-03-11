@@ -4,10 +4,11 @@ import config
 from Simulator.stats import COST
 from Simulator.origin_class import team_traits, game_comp_tiers
 
-
-# Includes the vector of the shop, bench, board, and item list.
-# Add a vector for each player composition makeup at the start of the round.
-# action vector = [Decision, shop, champion_bench, item_bench, x_axis, y_axis, x_axis 2, y_axis 2]
+'''
+Includes the vector of the shop, bench, board, and item list.
+Add a vector for each player composition makeup at the start of the round.
+action vector = [Decision, shop, champion_bench, item_bench, x_axis, y_axis, x_axis 2, y_axis 2]
+'''
 class Observation:
     def __init__(self):
         self.shop_vector = np.zeros(45)
@@ -15,11 +16,21 @@ class Observation:
         self.game_comp_vector = np.zeros(208)
         self.dummy_observation = np.zeros(config.OBSERVATION_SIZE)
         self.cur_player_observations = collections.deque(maxlen=config.OBSERVATION_TIME_STEPS *
-                                                                config.OBSERVATION_TIME_STEP_INTERVAL)
+                                                         config.OBSERVATION_TIME_STEP_INTERVAL)
         self.other_player_observations = {"player_" + str(player_id): np.zeros(306)
                                           for player_id in range(config.NUM_PLAYERS)}
         self.turn_since_update = 0.01
 
+    """
+    Description - Creates an observation for a given player.
+    Inputs      - player_id: string
+                    The player_id for the given player, used when adding other players observations
+                  player: Player object
+                    The player to get all of the observation vectors from
+                  action_vector: numpy array
+                    The next action format to use if using a 1d action space.
+    Outputs     - A dictionary with a tensor field (input to the representation network) and a mask for legal actions
+    """
     def observation(self, player_id, player, action_vector=np.array([])):
         # Fetch the shop vector and game comp vector
         shop_vector = self.shop_vector
@@ -37,7 +48,7 @@ class Observation:
                                             np.expand_dims(self.turn_since_update, axis=-1)], axis=-1)
 
         # Initially fill the queue with duplicates of first observation
-        # so we can still sample when there aren't enough time steps yet
+        # we can still sample when there aren't enough time steps yet
         maxLen = config.OBSERVATION_TIME_STEPS * config.OBSERVATION_TIME_STEP_INTERVAL
         if len(self.cur_player_observations) == 0:
             for _ in range(maxLen):
@@ -67,12 +78,22 @@ class Observation:
         total_tensor_observation = np.concatenate((cur_player_tensor_observation, other_player_tensor_observation))
 
         # Fetch and concatenate mask
-        # silver and the magic maskstalk
         mask = (player.decision_mask, player.shop_mask, player.board_mask, player.bench_mask, player.item_mask,
                 player.util_mask, player.thieves_glove_mask, player.glove_item_mask, player.glove_mask)
+
+        # Used to help the model know how outdated it's information on other players is.
+        # Also helps with ensuring that two observations with the same board and bench are not equal.
         self.turn_since_update += 0.01
         return {"tensor": total_tensor_observation, "mask": mask}
 
+    """
+    Description - Generates the other players observation from the perspective of the current player.
+                  This is the same as looking at each other board individually in a game.
+    Inputs      - cur_player: Player object
+                    Player whose perspective it is from
+                  players: List of Player objects
+                    All players in the game.
+    """
     def generate_other_player_vectors(self, cur_player, players):
         for player_id in players:
             other_player = players[player_id]
@@ -84,6 +105,11 @@ class Observation:
                 self.other_player_observations[player_id] = other_player_vector
         self.turn_since_update = 0
 
+    """
+    Description - Generates the vector for a comp tier for a given player. This is equal to the game compositions bar 
+                  on the left in TFT. 
+    """
+    # TODO: Add other player's compositions to the list of other player's vectors.
     def generate_game_comps_vector(self):
         output = np.zeros(208)
         for i in range(len(game_comp_tiers)):
@@ -94,6 +120,14 @@ class Observation:
             output[i * 26: i * 26 + 26] = tiers
         self.game_comp_vector = output
 
+    '''
+    Description - Generates the shop vector and information for the shop mask. This is a binary encoding of the champ
+                  costs list for each shop location. 0s if there is no shop option available.
+    Inputs      - shop: List of strings
+                    shop to transform into a vector
+                  player: Player Object
+                    player who the shop belongs to.
+    '''
     def generate_shop_vector(self, shop, player):
         # each champion has 6 bit for the name, 1 bit for the chosen.
         # 5 of them makes it 35.

@@ -146,13 +146,16 @@ class MCTS:
     """
     Description - select action from the root visit counts.
     Inputs      - visit_counts: list
-                      visit counts for each child
+                    visit counts for each child
                   temperature: float
-                      the temperature for the distribution
+                    the temperature for the distribution
                   deterministic: bool
-                      True -> select the argmax
-                      False -> sample from the distribution
-    Outputs     - 
+                    True -> select the argmax
+                    False -> sample from the distribution
+    Outputs     - action_pos
+                    position of the action in the policy and string array.
+                  count_entropy
+                    entropy of the improved policy.
     """
     @staticmethod
     def select_action(visit_counts, temperature=1.0, deterministic=True):
@@ -238,7 +241,7 @@ class MCTS:
                         local_counter += 1
                         continue
                     # if we're doing a bench to board move and board is full and there is no champ at destination, skip
-                    if a < 28 and b > 27 and b != 37 and mask[idx][5][0] and not mask[idx][2][a]:
+                    if a < 28 and b > 27 and b != 37 and not mask[idx][5][0] and not mask[idx][2][a]:
                         local_counter += 1
                         continue
                     local_action.append(policy_logits[idx][local_counter])
