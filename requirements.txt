@@ -10,3 +10,6 @@ PettingZoo~=1.22.3
 gymnasium~=0.27.0
 cython>=0.29.23
 websockets
+setuptools~=66.1.1
+scipy~=1.10.1
+torch~=1.13.1

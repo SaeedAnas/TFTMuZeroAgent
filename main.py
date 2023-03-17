@@ -1,4 +1,3 @@
-# import AI_interface
 import TestInterface.test_ai_interface as TestInterface
 import config
 from UnitTests.BaseUnitTest import runTest
@@ -24,7 +23,7 @@ def main():
     # interface.collect_dummy_data()
     # interface.testEnv()
     # interface.PPO_algorithm()
-
+    #
     # test_interface = TestInterface.AIInterface()
     # test_interface.train_model(starting_train_step=args.starting_episode)
 

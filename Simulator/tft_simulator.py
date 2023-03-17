@@ -5,7 +5,7 @@ import gymnasium as gym
 import numpy as np
 from gymnasium.spaces import MultiDiscrete, Box, Dict, Tuple
 from Simulator import pool
-from Simulator.player import player as player_class
+from Simulator.player import Player as player_class
 from Simulator.step_function import Step_Function
 from Simulator.game_round import Game_Round
 from Simulator.observation import Observation
@@ -233,7 +233,7 @@ class TFT_Simulator(AECEnv):
                 self.game_round.play_game_round()
 
                 # Check if the game is over
-                if self.check_dead() == 1 or self.game_round.current_round > 48:
+                if self.check_dead() <= 1 or self.game_round.current_round > 48:
                     # Anyone left alive (should only be 1 player unless time limit) wins the game
                     for player_id in self.agents:
                         if self.PLAYERS[player_id] and self.PLAYERS[player_id].health > 0:
@@ -250,24 +250,32 @@ class TFT_Simulator(AECEnv):
                 self.observations[agent] = self.game_observations[agent].observation(
                     agent, self.PLAYERS[agent], self.PLAYERS[agent].action_vector)
 
-            _live_agents = self.agents[:]
-            for k in self.kill_list:
-                self.terminations[k] = True
-                _live_agents.remove(k)
-                self.rewards[k] = (3 - len(_live_agents)) * 10 + 5 + self.PLAYERS[k].reward
-                self._cumulative_rewards[k] = self.rewards[k]
-                self.PLAYERS[k] = None
-                self.game_round.update_players(self.PLAYERS)
+                _live_agents = self.agents[:]
+                for k in self.kill_list:
+                    self.terminations[k] = True
+                    _live_agents.remove(k)
+                    self.rewards[k] = (3 - len(_live_agents)) * 10 + 5 + self.PLAYERS[k].reward
+                    self._cumulative_rewards[k] = self.rewards[k]
+                    self.PLAYERS[k] = None
+                    self.game_round.update_players(self.PLAYERS)
 
-            if len(self.kill_list) > 0:
-                self._agent_selector.reinit(_live_agents)
-            self.kill_list = []
+                if len(self.kill_list) > 0:
+                    self._agent_selector.reinit(_live_agents)
+                self.kill_list = []
+
+                if not all(self.terminations.values()):
+                    self.game_round.start_round()
+
+                    for agent in _live_agents:
+                        self.observations[agent] = self.game_observations[agent].observation(
+                            agent, self.PLAYERS[agent], self.PLAYERS[agent].action_vector)
 
             for player_id in self.PLAYERS:
                 if self.PLAYERS[player_id]:
                     self.rewards[player_id] = self.PLAYERS[player_id].reward
                     self._cumulative_rewards[player_id] = self.rewards[player_id]
-            # I think this if statement is needed in case all the agents die to the same minion round. a little sad.
+
+        # I think this if statement is needed in case all the agents die to the same minion round. a little sad.
         if len(self._agent_selector.agent_order):
             self.agent_selection = self._agent_selector.next()
 
