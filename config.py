@@ -1,13 +1,13 @@
 import numpy as np
 
 # IMPORTANT: Change this value to the number of cpu cores you want to use (recommended 80% of cpu)
-NUM_CPUS = 28
-GPU_SIZE_PER_WORKER = 0.18
-STORAGE_GPU_SIZE = 0.1
+NUM_CPUS = 8
+GPU_SIZE_PER_WORKER = 0
+STORAGE_GPU_SIZE = 0
 
-DEVICE = "cuda"
+DEVICE = "cpu"
 STOCHASTIC = True
-IMITATION = False
+IMITATION = True
 
 # AI RELATED VALUES START HERE
 
@@ -34,7 +34,8 @@ ACTION_CONCAT_SIZE = 81
 ACTION_DIM = [7, 37, 10]
 
 
-POLICY_HEAD_SIZES = [7, 5, 630, 370, 9]  # [7 types, shop, movement, item, sell/item loc]
+# [7 types, shop, movement, item, sell/item loc]
+POLICY_HEAD_SIZES = [7, 5, 630, 370, 9]
 NEEDS_2ND_DIM = [1, 2, 3, 4]
 
 # ACTION_DIM = 10
@@ -47,15 +48,15 @@ N_HEAD_HIDDEN_LAYERS = 4
 ### TIME RELATED VALUES ###
 ACTIONS_PER_TURN = 15
 CONCURRENT_GAMES = 1
-NUM_PLAYERS = 8 
+NUM_PLAYERS = 8
 NUM_SAMPLES = 20
-NUM_SIMULATIONS = 60
+NUM_SIMULATIONS = 5
 
 # Set to -1 to turn off.
-TD_STEPS = -1 
+TD_STEPS = -1
 # This should be 1000 + because we want to be sampling everything when using priority.
 # To change, look into the code in replay_muzero_buffer
-SAMPLES_PER_PLAYER = 1000  
+SAMPLES_PER_PLAYER = 1000
 UNROLL_STEPS = 15
 
 ### TRAINING ###
@@ -82,5 +83,6 @@ RUN_MINION_TESTS = False
 RUN_DROP_TESTS = False
 RUN_MCTS_TESTS = False
 RUN_MAPPING_TESTS = False
-RUN_CHECKPOINT_TESTS = True  # NOTE: This test requires the first 20 checkpoints (0 - 2000) be available
+# NOTE: This test requires the first 20 checkpoints (0 - 2000) be available
+RUN_CHECKPOINT_TESTS = True
 LOG_COMBAT = False

@@ -133,6 +133,22 @@ def action_to_idx(action, dim):
 
     return mapped_idx
 
+def convert_action_to_policy(action):
+    policy = [
+        torch.zeros(size) for size in config.POLICY_HEAD_SIZES
+    ]
+    
+    dim = int(action[0])
+    action = action[1:]
+    if dim in config.NEEDS_2ND_DIM:
+        idx = action_to_idx(action, dim)
+        policy[0][dim] = 1
+        policy[dim][idx] = 1
+    else:
+        policy[0][dim] = 1
+
+    return policy
+
 # Sample set is [ [batch_size, dim], [batch_size, dim] ...]
 # Convert the sample set string to the corresponding idx
 def sample_set_to_idx(sample_set):

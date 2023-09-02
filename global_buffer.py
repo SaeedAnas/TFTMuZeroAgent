@@ -52,11 +52,20 @@ class GlobalBuffer:
         # Records a single step of gameplay experience
         # First few are self-explanatory
         # done is boolean if game is done after taking said action
-        self.gameplay_experiences.put((sample[0], sample[1]))
+        print(self.gameplay_experiences.qsize())
+        try:
+            self.gameplay_experiences.put((sample[0], sample[1]))
+        except ValueError:
+            print('VALUE ERROR HERE ---------------------------')
+            print(sample[0])
+            print(sample[1])
+            print('---------------------------')
+
         self.average_position.append(position)
 
     def available_batch(self):
         queue_length = self.gameplay_experiences.qsize()
+        print(queue_length)
         if queue_length >= self.batch_size and not ray.get(self.storage_ptr.get_trainer_busy.remote()):
             self.storage_ptr.set_trainer_busy.remote(True)
             print(queue_length)

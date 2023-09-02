@@ -38,15 +38,19 @@ class TFT_Simulator(AECEnv):
         self.pool_obj = pool.pool()
         self.PLAYERS = {"player_" + str(player_id): player_class(self.pool_obj, player_id)
                         for player_id in range(config.NUM_PLAYERS)}
-        self.game_observations = {"player_" + str(player_id): Observation() for player_id in range(config.NUM_PLAYERS)}
+        self.game_observations = {
+            "player_" + str(player_id): Observation() for player_id in range(config.NUM_PLAYERS)}
         self.render_mode = None
 
         self.NUM_DEAD = 0
         self.num_players = config.NUM_PLAYERS
-        self.previous_rewards = {"player_" + str(player_id): 0 for player_id in range(config.NUM_PLAYERS)}
+        self.previous_rewards = {
+            "player_" + str(player_id): 0 for player_id in range(config.NUM_PLAYERS)}
 
-        self.step_function = Step_Function(self.pool_obj, self.game_observations)
-        self.game_round = Game_Round(self.PLAYERS, self.pool_obj, self.step_function)
+        self.step_function = Step_Function(
+            self.pool_obj, self.game_observations)
+        self.game_round = Game_Round(
+            self.PLAYERS, self.pool_obj, self.step_function)
         self.actions_taken = 0
         self.actions_taken_this_turn = 0
         self.game_round.play_game_round()
@@ -54,7 +58,8 @@ class TFT_Simulator(AECEnv):
             self.step_function.generate_shop(key, p)
         self.step_function.generate_shop_vectors(self.PLAYERS)
 
-        self.possible_agents = ["player_" + str(r) for r in range(config.NUM_PLAYERS)]
+        self.possible_agents = ["player_" +
+                                str(r) for r in range(config.NUM_PLAYERS)]
         self.agents = self.possible_agents[:]
         self.kill_list = []
         # This can likely be deleted, but I'm unsure if petting zoo uses this.
@@ -90,10 +95,13 @@ class TFT_Simulator(AECEnv):
                 [
                     Dict({
                         "tensor": Box(low=0, high=10.0, shape=(config.OBSERVATION_SIZE,), dtype=np.float64),
-                        "mask": Tuple((MultiDiscrete(np.ones(6) * 2, dtype=np.int8), 
-                                       MultiDiscrete(np.ones(5) * 2, dtype=np.int8),
-                                       MultiDiscrete(np.ones(28) * 2, dtype=np.int8),
-                                       MultiDiscrete(np.ones(9) * 2, dtype=np.int8),
+                        "mask": Tuple((MultiDiscrete(np.ones(6) * 2, dtype=np.int8),
+                                       MultiDiscrete(
+                                           np.ones(5) * 2, dtype=np.int8),
+                                       MultiDiscrete(
+                                           np.ones(28) * 2, dtype=np.int8),
+                                       MultiDiscrete(
+                                           np.ones(9) * 2, dtype=np.int8),
                                        MultiDiscrete(np.ones(10) * 2, dtype=np.int8)))
                     }) for _ in self.agents
                 ],
@@ -137,12 +145,16 @@ class TFT_Simulator(AECEnv):
         self.pool_obj = pool.pool()
         self.PLAYERS = {"player_" + str(player_id): player_class(self.pool_obj, player_id)
                         for player_id in range(config.NUM_PLAYERS)}
-        self.game_observations = {"player_" + str(player_id): Observation() for player_id in range(config.NUM_PLAYERS)}
+        self.game_observations = {
+            "player_" + str(player_id): Observation() for player_id in range(config.NUM_PLAYERS)}
         self.NUM_DEAD = 0
-        self.previous_rewards = {"player_" + str(player_id): 0 for player_id in range(config.NUM_PLAYERS)}
+        self.previous_rewards = {
+            "player_" + str(player_id): 0 for player_id in range(config.NUM_PLAYERS)}
 
-        self.step_function = Step_Function(self.pool_obj, self.game_observations)
-        self.game_round = Game_Round(self.PLAYERS, self.pool_obj, self.step_function)
+        self.step_function = Step_Function(
+            self.pool_obj, self.game_observations)
+        self.game_round = Game_Round(
+            self.PLAYERS, self.pool_obj, self.step_function)
         self.actions_taken = 0
         self.actions_taken_this_turn = 0
         self.game_round.play_game_round()
@@ -233,9 +245,11 @@ class TFT_Simulator(AECEnv):
                     for player_id in self.agents:
                         if self.PLAYERS[player_id] and self.PLAYERS[player_id].health > 0:
                             self.PLAYERS[player_id].won_game()
-                            self.rewards[player_id] = 40 + self.PLAYERS[player_id].reward
+                            self.rewards[player_id] = 40 + \
+                                self.PLAYERS[player_id].reward
                             self._cumulative_rewards[player_id] = self.rewards[player_id]
-                            self.PLAYERS[player_id] = None  # Without this the reward is reset
+                            # Without this the reward is reset
+                            self.PLAYERS[player_id] = None
 
                     self.terminations = {a: True for a in self.agents}
 
@@ -249,7 +263,8 @@ class TFT_Simulator(AECEnv):
                 for k in self.kill_list:
                     self.terminations[k] = True
                     _live_agents.remove(k)
-                    self.rewards[k] = (7 - len(_live_agents)) * 5 + self.PLAYERS[k].reward
+                    self.rewards[k] = (7 - len(_live_agents)) * \
+                        5 + self.PLAYERS[k].reward
                     self._cumulative_rewards[k] = self.rewards[k]
                     self.PLAYERS[k] = None
                     self.game_round.update_players(self.PLAYERS)

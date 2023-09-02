@@ -19,6 +19,7 @@ from Simulator import utils
 from Models.MCTS_torch import MCTS
 from Models.MuZero_torch_agent import MuZeroNetwork as TFTNetwork
 from Models.MuZero_torch_trainer import Trainer
+from Models.MCTS_Util import convert_action_to_policy
 from torch.utils.tensorboard import SummaryWriter
 import torch
 
@@ -35,7 +36,8 @@ class DataWorker(object):
         self.past_version = [False for _ in range(config.NUM_PLAYERS)]
 
         # Testing purposes only
-        self.default_agent = [True for _ in range(config.NUM_PLAYERS)]
+        # self.default_agent = [True for _ in range(config.NUM_PLAYERS)]
+        self.default_agent = [False for _ in range(config.NUM_PLAYERS)]
         # self.default_agent = [np.random.rand() < 0.5 for _ in range(config.NUM_PLAYERS)]
         # Ensure we have at least one model player and for testing
         # self.default_agent[0] = False
@@ -348,14 +350,15 @@ class DataWorker(object):
     def imitation_learning(self, player_observation, info):
         policy = [[1.0] for _ in range(len(self.default_agent))]
         string_samples = [[] for _ in range(len(self.default_agent))]
-
-        actions, _, _, root_values = \
-            self.agent_network.policy(player_observation)
+        root_values = [0] * len(self.default_agent)
+        actions = []
 
         local_info = list(info.values())
         for i, default_agent in enumerate(self.default_agent):
             string_samples[i] = [local_info[i]["player"].default_policy(local_info[i]["game_round"],
                                                                         local_info[i]["shop"])]
+            actions.append(string_samples[i][0])
+            # policy[i] = convert_action_to_policy(string_samples[i][0])
         return actions, policy, string_samples, root_values
 
     '''
@@ -464,6 +467,7 @@ class AIInterface:
 
         while True:
             if ray.get(global_buffer.available_batch.remote()):
+                print('Finally fml')
                 gameplay_experience_batch, average_position = ray.get(global_buffer.sample_batch.remote())
                 train_summary_writer.add_scalar('episode_info/average_position', average_position, train_step)
                 trainer.train_network(gameplay_experience_batch, train_step)

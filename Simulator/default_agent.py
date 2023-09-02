@@ -40,23 +40,28 @@ class Default_Agent:
         if unit in FRONT_LINE_UNITS:
             for displacement in range(4):
                 if not player.board[3 + displacement][3]:
-                    return "2_" + str(bench_location) + "_" + str(24 + displacement)
+                    return "2_" + str(24 + displacement) +  "_" + str(bench_location)
                 if not player.board[3 - displacement][3]:
-                    return "2_" + str(bench_location) + "_" + str(24 - displacement)
+                    # return "2_" + str(bench_location) + "_" + str(24 - displacement)
+                    return "2_" + str(24 - displacement) + "_" + str(bench_location)
             print("Empty Front line with board {}".format(player.board))
         if unit in MIDDLE_LINE_UNITS:
             for displacement in range(4):
                 if not player.board[3 + displacement][2]:
-                    return "2_" + str(bench_location) + "_" + str(17 + displacement)
+                    # return "2_" + str(bench_location) + "_" + str(17 + displacement)
+                    return "2_" + str(17 + displacement) + "_" + str(bench_location)
                 if not player.board[3 - displacement][2]:
-                    return "2_" + str(bench_location) + "_" + str(17 - displacement)
+                    # return "2_" + str(bench_location) + "_" + str(17 - displacement)
+                    return "2_" + str(17 - displacement) + "_" + str(bench_location)
             print("Empty Mid line with board {}".format(player.board))
         if unit in BACK_LINE_UNITS:
             for displacement in range(4):
                 if not player.board[3 + displacement][0]:
-                    return "2_" + str(bench_location) + "_" + str(3 + displacement)
+                    # return "2_" + str(bench_location) + "_" + str(3 + displacement)
+                    return "2_" + str(3 + displacement) + "_" + str(bench_location)
                 if not player.board[3 - displacement][0]:
-                    return "2_" + str(bench_location) + "_" + str(3 - displacement)
+                    # return "2_" + str(bench_location) + "_" + str(3 - displacement)
+                    return "2_" + str(3 - displacement) + "_" + str(bench_location)
             print("Empty Back line with board {}".format(player.board))
         return "0"
 

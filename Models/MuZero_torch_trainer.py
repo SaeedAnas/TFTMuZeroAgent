@@ -118,15 +118,19 @@ class Trainer(object):
 
         for tstep, prediction in enumerate(predictions):
             step_value, step_target_value = prediction.value_logits, target_value[:, tstep]
-            value_loss = self.value_or_reward_loss(step_value, step_target_value)
+            value_loss = self.value_or_reward_loss(
+                step_value, step_target_value)
             self.scale_loss(value_loss)
 
             step_reward, step_target_reward = prediction.reward_logits, target_reward[:, tstep]
-            reward_loss = self.value_or_reward_loss(step_reward, step_target_reward)
+            reward_loss = self.value_or_reward_loss(
+                step_reward, step_target_reward)
             self.scale_loss(reward_loss)
 
-            step_target_policy = self.fill_policy(target_policy[tstep], sample_set[tstep])
-            policy_loss = self.policy_loss(prediction.policy_logits, step_target_policy)
+            step_target_policy = self.fill_policy(
+                target_policy[tstep], sample_set[tstep])
+            policy_loss = self.policy_loss(
+                prediction.policy_logits, step_target_policy)
             self.scale_loss(policy_loss)
 
             self.outputs.value_loss.append(value_loss)
@@ -137,8 +141,10 @@ class Trainer(object):
             self.outputs.reward.append(prediction.reward)
             self.outputs.policy.append(prediction.policy_logits)
 
-            self.outputs.target_value.append(self.decode_target(step_target_value, self.network.value_encoder))
-            self.outputs.target_reward.append(self.decode_target(step_target_value, self.network.value_encoder))
+            self.outputs.target_value.append(self.decode_target(
+                step_target_value, self.network.value_encoder))
+            self.outputs.target_reward.append(self.decode_target(
+                step_target_value, self.network.value_encoder))
 
         l2_loss = self.l2_regularization()
         self.outputs.l2_loss.append(l2_loss)
@@ -228,7 +234,8 @@ class Trainer(object):
         idx_set = sample_set_to_idx(sample_set)
         target = create_target_and_mask(target, idx_set)
 
-        target = [torch.from_numpy(target_dim).to(config.DEVICE) for target_dim in target]
+        target = [torch.from_numpy(target_dim).to(
+            config.DEVICE) for target_dim in target]
 
         return target
 
