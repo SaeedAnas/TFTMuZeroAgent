@@ -20,8 +20,41 @@ class TFTConfig:
     reward_type: str = "winloss"
     render_mode: str = None # "json" or None
     render_path: str = "Games"
-    observation_class: ObservationBase = ObservationVector
-    action_class: ActionBase = ActionVector
+    
+    """
+    Observation and Action Classes:
+
+    You can define your own observation and action classes,
+    but they must inherit from ObservationBase and ActionBase
+    
+    Each player can use a different observation and action class,
+    or they can all use the same one.
+    
+    Different obs. and actions can be defined as:
+
+    config = TFTConfig(
+        observation_class = {
+            "player_0": Observation1,
+            "player_1": Observation2,
+            ...
+        },
+        action_class = {
+            "player_0": Action1,
+            "player_1": Action2,
+            ...
+        }
+    )
+    
+    or they can all use the same one:
+
+    config = TFTConfig(
+        observation_class = Observation1,
+        action_class = Action1
+    )
+
+    """
+    observation_class: dict[str, ObservationBase] | ObservationBase = ObservationVector
+    action_class: dict[str, ActionBase] | ActionBase = ActionVector
 
 def env(config: TFTConfig = TFTConfig()):
     """
@@ -77,7 +110,10 @@ class TFT_Simulator(AECEnv):
 
     @functools.lru_cache(maxsize=None)
     def action_space(self, agent):
-        return self.action_class.action_space()
+        if self.config.action_class is dict:
+            return self.action_class[agent].action_space()
+        else:
+            return self.action_class.action_space()
 
     def render(self):
         if self.render_mode is not None:

@@ -1,3 +1,4 @@
+from Simulator.porox.observation import ObservationBase, ActionBase
 from Simulator.porox.player import Player as player_class
 
 class PlayerManager:
@@ -24,20 +25,16 @@ class PlayerManager:
             for player_id, player in enumerate(self.players)
         }
         
-        self.observation_states = {
-            player: config.observation_class(self.player_states[player])
-            for player in self.players
-        }
+        # In order to support multiple observation types, 
+        # we need to store all observation types for EACH player
+        self.observation_mapping = self.create_observation_mapping(config.observation_class)
+        self.observation_states = self.create_observations(list(self.observation_mapping.values()))
         
-        self.opponent_observations = {
-            player: self.fetch_opponent_observations(player)
-            for player in self.players
-        }
+        self.action_handlers = self.create_actions(config.action_class)
         
-        self.action_handlers = {
-            player: config.action_class(self.player_states[player])
-            for player in self.players
-        }
+        self.opponent_observations = self.create_opponent_observations()
+
+    # -- Player Management -- #
 
     def kill_player(self, player_id):
         """TODO: Change how this works... it is like this to be compatible with the old sim"""
@@ -47,6 +44,70 @@ class PlayerManager:
         self.pool_obj.return_hero(player)
 
         self.player_states[player_id] = None
+        
+    # -- Support for multiple observation types -- #
+        
+    def create_observation_mapping(self, observation_class: ObservationBase | dict[ObservationBase]):
+        if observation_class is not dict:
+            observation_class = {player: observation_class for player in self.players}
+        
+        return observation_class
+        
+    def create_observations(self, observation_class: list[ObservationBase]):
+        """
+        Creates a dict of dicts of observation classes
+
+        Each observation class gets its own dictionary of observations
+        """
+        unique_observation_classes = set(observation_class)
+        
+        def create_observation_dict(observation_class):
+            return {
+                player_id: observation_class(player_state)
+                for player_id, player_state in self.player_states.items()
+            }
+        
+        return {
+            observation_class: create_observation_dict(observation_class)
+            for observation_class in unique_observation_classes
+        }
+        
+    def create_actions(self, action_class: ActionBase | dict[ActionBase]):
+        """
+        Creates a dict of action classes
+        """
+        if action_class is not dict:
+            return {
+                player_id: action_class(player_state)
+                for player_id, player_state in self.player_states.items()
+            }
+            
+        return {
+            player_id: action_class[player_id](player_state)
+            for player_id, player_state in self.player_states.items()
+        }
+        
+    def create_opponent_observations(self):
+        """
+        Because the observation states may be different for each player,
+        we stored all the observation_states for each player in a dict.
+
+        We can then fetch the opponent observations for each player regardless of the observation state.
+        """
+        
+        return {
+            player: self.fetch_opponent_observations(player)
+            for player in self.players
+        }
+        
+    def get_observation_state(self, player_id):
+        obs_class = self.observation_mapping[player_id]
+        return self.observation_states[obs_class][player_id]
+    
+    def get_action_handler(self, player_id):
+        return self.action_handlers[player_id]
+        
+    # -- fetch observations -- #
 
     def fetch_opponent_observations(self, player_id):
         """Fetches the opponent observations for the given player.
@@ -57,14 +118,23 @@ class PlayerManager:
         Returns:
             list: List of observations for the given player.
         """
+        observation_class = self.observation_mapping[player_id]
+        observation_states = self.observation_states[observation_class]
+        
         observations = [
-            self.observation_states[player].fetch_public_observation()
+            observation_states[player].fetch_public_observation()
             if not self.terminations[player]
-            else self.observation_states[player].fetch_dead_observation()
+            else observation_states[player].fetch_dead_observation()
             for player in self.player_ids
-            
+
             # TODO: make this an option
             # if player != player_id
+
+            # Currently not used to make my life easier
+            # Essentially what I'm doing right now is 
+            # passing all the opponent observations to the first player
+            # And using the same opponent observations for all players
+            # This effectively reduces computations from 64 to 16
         ]
 
         return observations
@@ -79,23 +149,22 @@ class PlayerManager:
             "opponents": [PlayerPublicObservation, ...]
         }
         """
+        observation_state = self.get_observation_state(player_id)
+        action_handler = self.get_action_handler(player_id)
 
         return {
-            "player": self.observation_states[player_id].fetch_player_observation(),
-            "action_mask": self.action_handlers[player_id].fetch_action_mask(),
+            "player": observation_state.fetch_player_observation(),
+            "action_mask": action_handler.fetch_action_mask(),
             "opponents": self.opponent_observations[player_id],
         }
 
-    def fetch_observations(self):
-        """Creates the observation for every player."""
-        return {player_id: self.fetch_observation(player_id) for player_id, alive in self.terminations.items() if alive}
-    
     def update_game_round(self):
         for player in self.players:
             if not self.terminations[player]:
                 self.player_states[player].actions_remaining = self.config.max_actions_per_round
-                self.observation_states[player].update_game_round()
-                self.action_handlers[player].update_game_round()
+                
+                self.get_observation_state(player).update_game_round()
+                self.get_action_handler(player).update_game_round()
                 
                 # This is only here so that the Encoder doesn't have to do 64 operations, but instead 16
                 # This ensures that the masked player states are the same for all players
@@ -107,8 +176,8 @@ class PlayerManager:
         for player in self.players:
             if not self.terminations[player]:
                 self.player_states[player].refresh_shop()
-                self.observation_states[player].update_observation([2, 0, 0])
-                self.action_handlers[player].update_action_mask([2, 0, 0])
+                self.get_observation_state(player).update_observation([2, 0, 0])
+                self.get_action_handler(player).update_action_mask([2, 0, 0])
 
     # - Used so I don't have to change the Game_Round class -
     # TODO: Refactor Game_Round class to use refresh_all_shops
@@ -138,15 +207,17 @@ class PlayerManager:
         Returns:
             bool: True if action was performed successfully, False otherwise.
         """
-        action = self.action_handlers[player_id].action_space_to_action(action)
+        player = self.player_states[player_id]
+        observation_state = self.get_observation_state(player_id)
+        action_handler = self.get_action_handler(player_id)
+
+        action = action_handler.action_space_to_action(action)
 
         if type(action) is not list and len(action) != 3:
             print(f"Action is not a list of length 3: {action}")
             return
 
         action_type, x1, x2 = action
-
-        player = self.player_states[player_id]
 
         # Pass Action
         if action_type == 0:
@@ -186,5 +257,6 @@ class PlayerManager:
             player.print(f"Action Type is invalid: {action}")
             
         player.actions_remaining -= 1
-        self.observation_states[player_id].update_observation(action)
-        self.action_handlers[player_id].update_action_mask(action)
+        
+        observation_state.update_observation(action)
+        action_handler.update_action_mask(action)
