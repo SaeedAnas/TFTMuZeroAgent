@@ -106,6 +106,13 @@ class PlayerManager:
     
     def get_action_handler(self, player_id):
         return self.action_handlers[player_id]
+    
+    def update_all_observation_states(self, player_id, action):
+        """
+        We need to update each observation state for each player
+        """
+        for obs_class, obs_dict in self.observation_states.items():
+            obs_dict[player_id].update_observation(action)
         
     # -- fetch observations -- #
 
@@ -208,7 +215,6 @@ class PlayerManager:
             bool: True if action was performed successfully, False otherwise.
         """
         player = self.player_states[player_id]
-        observation_state = self.get_observation_state(player_id)
         action_handler = self.get_action_handler(player_id)
 
         action = action_handler.action_space_to_action(action)
@@ -258,5 +264,5 @@ class PlayerManager:
             
         player.actions_remaining -= 1
         
-        observation_state.update_observation(action)
+        self.update_all_observation_states(player_id, action)
         action_handler.update_action_mask(action)
