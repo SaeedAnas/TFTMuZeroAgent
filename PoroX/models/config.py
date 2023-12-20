@@ -15,6 +15,7 @@ class MuZeroConfig:
     policy_head: EncoderConfig
     value_head: EncoderConfig 
     dynamics_head: EncoderConfig
+    reward_head: EncoderConfig
 
 test_config = MuZeroConfig(
     player_encoder= PlayerConfig(
@@ -45,18 +46,24 @@ test_config = MuZeroConfig(
         num_heads=4,
     ),
     policy_head=EncoderConfig(
-        num_blocks=6,
+        num_blocks=4,
         num_heads=2,
         project_dim=38,
-        project_blocks=4,
+        project_blocks=2,
     ),
     value_head=EncoderConfig(
-        num_blocks=4,
+        num_blocks=2,
         num_heads=2,
     ),
     dynamics_head=EncoderConfig(
-        num_blocks=6,
+        num_blocks=4,
+        num_heads=5,
+        project_dim=192, # Ensure hidden state matches segment hidden state
+        project_blocks=2,
+        project_num_heads=4,
+    ),
+    reward_head=EncoderConfig(
+        num_blocks=2,
         num_heads=2,
-        project_blocks=3,
     )
 )

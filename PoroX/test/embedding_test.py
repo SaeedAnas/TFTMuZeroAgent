@@ -10,7 +10,7 @@ from PoroX.modules.observation import PlayerObservation, BatchedObservation
 
 from PoroX.models.components.embedding import (
     ChampionEmbedding, PlayerEmbedding, EmbeddingConfig,
-    SegmentEncoding, PlayerSegmentFFN, SegmentConfig
+    SegmentEncoding, PlayerSegmentFFN, SegmentConfig, ActionEmbedding
 )
 from PoroX.models.mctx_agent import RepresentationNetwork
 from PoroX.models.config import test_config
@@ -130,3 +130,18 @@ def test_segment_embedding(first_obs, key):
     
     N=1000
     profile(N, apply, ev, mv, x)
+    
+def test_action_embedding(key):
+    test_actions = jnp.array([380, 418, 526, 600])
+    action_embedding = ActionEmbedding()
+    variables = action_embedding.init(key, test_actions)
+    
+    @jax.jit
+    def apply(variables, test_actions):
+        return action_embedding.apply(variables, test_actions)
+    
+    x = apply(variables, test_actions)
+    print(x.shape)
+
+    N=1000
+    profile(N, apply, variables, test_actions)

@@ -7,7 +7,8 @@ import PoroX.modules.batch_utils as batch_utils
 
 from PoroX.models.player_encoder import PlayerEncoder, CrossPlayerEncoder, GlobalPlayerEncoder
 from PoroX.models.components.transformer import EncoderConfig, CrossAttentionEncoder, Encoder
-from PoroX.models.components.embedding import PolicyActionTokens, ValueToken
+from PoroX.models.components.value_encoder import ValueEncoder
+from PoroX.models.components.embedding import PolicyActionTokens, ActionEmbedding
 from PoroX.models.components.fc import FFNSwiGLU
 from PoroX.models.config import MuZeroConfig
     
@@ -87,15 +88,7 @@ class PredictionNetwork(nn.Module):
         policy_logits = jnp.reshape(policy_logits_flattened, policy_shape)
         
         # --- Value Network --- #
-        value_token_with_hidden_state = ValueToken()(hidden_state)
-        
-        value_logits = Encoder(self.config.value_head)(value_token_with_hidden_state)
-        
-        # Only return the value token
-        value_logits = value_logits[..., 0, :]
-        
-        # Now optionally we could apply one final MLP to get the logits
-        value_logits = FFNSwiGLU()(value_logits)
+        value_logits = ValueEncoder(self.config.value_head)(hidden_state)
         
         return policy_logits, value_logits
     
@@ -109,16 +102,38 @@ class DynamicsNetwork(nn.Module):
     
     Then pass through an Encoder with a projection of the original hidden state
     """
+    config: MuZeroConfig
+
+    @nn.compact
+    def __call__(self, hidden_state, action):
+        # --- Next Hidden State --- #
+        action_embeddings = ActionEmbedding()(action)
+        
+        # Expand dims from (..., embedding) to (..., 1, embedding)
+        action_embeddings = jnp.expand_dims(action_embeddings, axis=-2)
+        # Broadcast to (..., sequence, embedding)
+        action_embeddings = jnp.broadcast_to(action_embeddings, hidden_state.shape[:-1] + (action_embeddings.shape[-1],))
+        
+        # Concatenate the action embeddings to the hidden state
+        hidden_state_with_action = jnp.concatenate([
+            hidden_state,
+            action_embeddings
+        ], axis=-1)
+        
+        next_hidden_state = Encoder(self.config.dynamics_head)(hidden_state_with_action)
+        
+        # --- Reward --- #
+        reward_logits = ValueEncoder(self.config.reward_head)(next_hidden_state)
+        
+        return next_hidden_state, reward_logits
 
 
 """
-Stochastic MuZero Network:
+MuZero Network:
 
 Representation Network: hidden_state = R(observation)
 Prediction Network: policy_logits, value = P(hidden_state)
-Afterstate Dynamics Network: afterstate = AD(hidden_state, action)
-Afterstate Prediction Network: chance_outcomes, afterstate_value = AP(afterstate)
-Dynamics Network: hidden_state, reward = D(afterstate, chance_outcomes)
+Dynamics Network: hidden_state, reward = D(hidden_state, action)
 
 """
 

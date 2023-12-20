@@ -15,6 +15,8 @@ class EncoderConfig:
     project_dim: Optional[int] = None
     # How many blocks encode at the projected dimension
     project_blocks: int = 1
+    # Sometimes the project_dim won't be divisible by num_heads
+    project_num_heads: Optional[int] = None
     
     # Layer size of the QKV linear layers
     qkv_features: Optional[int] = None
@@ -93,6 +95,7 @@ class Encoder(nn.Module):
         # Project down to project_dima after N blocks specified by project_ratio
         else:
             num_blocks = self.config.num_blocks - self.config.project_blocks
+            proj_num_heads = self.config.project_num_heads or self.config.num_heads
             
             for layer in range(num_blocks):
                 x = EncoderBlock(
@@ -107,7 +110,7 @@ class Encoder(nn.Module):
             
             for layer in range(self.config.project_blocks):
                 x = EncoderBlock(
-                    num_heads=self.config.num_heads,
+                    num_heads=proj_num_heads,
                     qkv_features=self.config.qkv_features,
                     hidden_dim=self.config.hidden_dim
                 )(x)

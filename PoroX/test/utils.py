@@ -1,6 +1,7 @@
 import pytest
 import time
 import jax
+import jax.numpy as jnp
 import random
 import numpy as np
 
@@ -26,6 +27,35 @@ def sample_action(
             return 0
         return random.choice(legal_actions)
     return env.action_space(agent).sample()
+
+def softmax_action(
+        policy_logits,
+        action_mask,
+):
+    # Policy logits are (..., 55, 38)
+    # Need to flatten to (..., 55*38)
+    # Mask out illegal actions
+    # Apply softmax
+    # Select action using argmax
+    
+    # Flatten
+    policy_shape = policy_logits.shape
+    policy_flattened = jnp.reshape(policy_logits, policy_shape[:-2] + (-1,))
+    
+    action_shape = action_mask.shape
+    action_mask_flattened = jnp.reshape(action_mask, action_shape[:-2] + (-1,))
+    
+    # Mask out illegal actions
+    policy_flattened = policy_flattened * action_mask_flattened
+
+    # Apply softmax
+    policy_flattened = jax.nn.softmax(policy_flattened, axis=-1)
+
+    # Select action using argmax
+    action = jnp.argmax(policy_flattened, axis=-1)
+
+    return action
+    
 
 def profile(N, f, *params):
     total = 0

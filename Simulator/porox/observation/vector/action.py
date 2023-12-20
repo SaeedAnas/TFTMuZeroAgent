@@ -35,8 +35,8 @@ class ActionVector(ActionBase, ActionVectorBase):
         2 -> Refresh
         3-30 -> Board Slots (28)
         31-39 -> Bench Slots (9)
-        40-49 -> Item Bench Slots (10)
-        50-54 -> Shop Slots (5)
+        40-44 -> Shop Slots (5)
+        45-54 -> Item Bench Slots (10)
         
         38 :
         0-27 -> Board Slots
@@ -57,8 +57,8 @@ class ActionVector(ActionBase, ActionVectorBase):
         |2| (Refresh)
         |3|4|5|...|30| (Board Slots) (28)
         |31|32|33|34|35|36|37|38|39| (Bench Slots) (9)
-        |40|41|42|43|44|45|46|47|48|49| (Item Bench Slots) (10)
-        |50|51|52|53|54| (Shop Slots) (5)
+        |40|41|42|43|44| (Shop Slots) (5)
+        |45|46|47|48|49|50|51|52|53|54| (Item Bench Slots) (10)
         
         38:
         0-27 -> Board Slots
@@ -69,21 +69,23 @@ class ActionVector(ActionBase, ActionVectorBase):
         
         col, index = action // 38, action % 38
         
+        # Pass
         if col == 0:
             return [0, 0, 0]
 
+        # Level
         elif col == 1:
             return [1, 0, 0]
 
+        # Refresh
         elif col == 2:
             return [2, 0, 0]
 
-        col -= 3
         action = []
             
         # Board and Bench slots
-        if col < 37:
-            from_loc = col
+        if col < 39:
+            from_loc = col - 3
 
             if index == 37:
                 action = [4, from_loc, 0]
@@ -91,16 +93,16 @@ class ActionVector(ActionBase, ActionVectorBase):
                 to_loc = index
                 action = [5, from_loc, to_loc]
                 
+        # Shop Slots
+        elif col < 45:
+            action = [3, col - 40, 0]
+            
         # Item Bench Slots
-        elif col < 47:
-            from_loc = col - 37
+        elif col < 55:
+            from_loc = col - 45
             to_loc = index
             action = [6, from_loc, to_loc]
-            
-        # Shop Slots
-        elif col < 52:
-            action = [3, col - 47, 0]
-            
+                
         return action
 
     def fetch_action_mask(self):
@@ -110,22 +112,14 @@ class ActionVector(ActionBase, ActionVectorBase):
             55 
         1 | | | | | ... | | x 38
         
-        # 55 :
-        # 0-27 -> Board Slots (28)
-        # 28-36 -> Bench Slots (9)
-        # 37-46 -> Item Bench Slots (10)
-        # 47-51 -> Shop Slots (5)
-        # 52 -> Pass
-        # 53 -> Level
-        # 54 -> Refresh
         55 :
         0 -> Pass
         1 -> Level
         2 -> Refresh
         3-30 -> Board Slots (28)
         31-39 -> Bench Slots (9)
-        40-49 -> Item Bench Slots (10)
-        50-54 -> Shop Slots (5)
+        40-44 -> Shop Slots (5)
+        45-54 -> Item Bench Slots (10)
         
         38 :
         0-27 -> Board Slots
@@ -152,12 +146,12 @@ class ActionVector(ActionBase, ActionVectorBase):
         
         # --- Bench mask --- #
         action_mask[31:40, :] = self.move_sell_bench_mask
+        
+        # --- Shop mask --- #
+        action_mask[40:45, 0] = self.buy_mask
 
         # --- Item bench mask --- #
-        action_mask[40:50, :] = self.item_mask
-
-        # --- Shop mask --- #
-        action_mask[50:55, 0] = self.buy_mask
+        action_mask[45:55, :] = self.item_mask
         
         return action_mask
 
