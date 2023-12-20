@@ -89,7 +89,7 @@ def test_representation_network(first_obs, key):
     profile(N, apply, variables, obs)
     
 def test_params_representation_network(first_obs, key):
-    obs = batch_utils.collect_obs(first_obs)
+    obs = batch_utils.collect_shared_obs(first_obs)
 
     repr_network = RepresentationNetwork(config=test_config)
     variables = repr_network.init(key, obs)

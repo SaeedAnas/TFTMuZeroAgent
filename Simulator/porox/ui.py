@@ -71,9 +71,9 @@ class GameState:
     Action can be either a player action or an environment action.
 
     """
-    def __init__(self, players, game_round, render_path, action_class):
+    def __init__(self, players, game_round, render_path, action_handlers):
         self.players = players
-        self.action_class = action_class
+        self.action_handlers = action_handlers
         self.player_states = {player_id: self.create_player_state(player) for player_id, player in players.items()}
         self.player_actions = {player_id: [] for player_id in players}
         self.player_battles = {player_id: [] for player_id in players}
@@ -364,7 +364,7 @@ class GameState:
         """Called after the action is taken."""
         
         player = self.players[agent]
-        action = self.action_class.action_space_to_action(action)
+        action = self.action_handlers[agent].action_space_to_action(action)
         
         action_type, x1, x2 = action
         

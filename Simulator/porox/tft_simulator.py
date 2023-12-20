@@ -163,7 +163,10 @@ class TFT_Simulator(AECEnv):
         
         # --- Game State for Render ---
         if self.render_mode is not None:
-            self.game_state = GameState(self.player_manager.player_states, self.game_round, self.render_path, action_class=self.action_class)
+            self.game_state = GameState(self.player_manager.player_states,
+                                        self.game_round, 
+                                        self.render_path, 
+                                        action_handlers = self.player_manager.action_handlers)
         
         # --- Agent Selector API ---
         self._agent_selector = agent_selector(self.agents)

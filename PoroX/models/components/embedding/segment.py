@@ -14,6 +14,7 @@ from PoroX.models.components.fc import MLP, FFNSwiGLU
 class SegmentConfig:
     segments: jnp.ndarray
     num_elements: Optional[int] = None
+    out_dim: Optional[int] = None
     hidden_dim: Optional[int] = None
 
 # -- Encoding -- #
@@ -84,8 +85,8 @@ class GlobalPlayerSegmentFFN(nn.Module):
         playerIDs = x[..., 53:57, :]
         scalars = x[..., 57:, :]
         
-        def ffn(hidden_dim=self.config.hidden_dim):
-            return FFNSwiGLU(hidden_dim)
+        def ffn(hidden_dim=self.config.hidden_dim, out_dim=self.config.out_dim):
+            return FFNSwiGLU(hidden_dim, out_dim)
 
         board_fc    = ffn()(board)
         bench_fc    = ffn()(bench)

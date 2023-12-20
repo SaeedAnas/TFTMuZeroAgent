@@ -6,7 +6,9 @@ from PoroX.modules.observation import BatchedObservation
 import PoroX.modules.batch_utils as batch_utils
 
 from PoroX.models.player_encoder import PlayerEncoder, CrossPlayerEncoder, GlobalPlayerEncoder
-from PoroX.models.components.transformer import EncoderConfig, CrossAttentionEncoder
+from PoroX.models.components.transformer import EncoderConfig, CrossAttentionEncoder, Encoder
+from PoroX.models.components.embedding import PolicyActionTokens, ValueToken
+from PoroX.models.components.fc import FFNSwiGLU
 from PoroX.models.config import MuZeroConfig
     
 class RepresentationNetwork(nn.Module):
@@ -46,6 +48,67 @@ class RepresentationNetwork(nn.Module):
         merged_states = CrossAttentionEncoder(self.config.merge_encoder)(player_states, context=cross_states)
         
         return merged_states
+    
+
+class PredictionNetwork(nn.Module):
+    """
+    Prediction Network to return a policy and value for a given hidden state
+
+    Hidden State:
+    - Sequence of tokens of size N
+    - Comes from the Representation Network/Dynamics Network
+    
+    Prediction Network is essentially BERT
+    Value Network is BERT followed by an MLP
+    """
+    config: MuZeroConfig
+
+    @nn.compact
+    def __call__(self, hidden_state):
+        
+        # --- Policy Network --- #
+        # Policy is of shape (55, 38)
+        # Action tokens are <Pass>, <Level>, and <Shop>
+        action_tokens_with_hidden_state = PolicyActionTokens()(hidden_state)
+
+        policy_logits = Encoder(self.config.policy_head)(action_tokens_with_hidden_state)
+        
+        # Ignore tokens after first 55
+        policy_logits = policy_logits[..., :55, :]
+        
+        # Now optionally we could apply one final MLP to get the logits
+        policy_shape = policy_logits.shape
+        hidden_dim = policy_shape[-1] * policy_shape[-2]
+        # Flatten the policy
+        policy_logits_flattened = jnp.reshape(policy_logits, policy_shape[:-2] + (hidden_dim,))
+        # Apply MLP
+        policy_logits_flattened = FFNSwiGLU(hidden_dim=hidden_dim)(policy_logits_flattened)
+        # Reshape back to original shape
+        policy_logits = jnp.reshape(policy_logits_flattened, policy_shape)
+        
+        # --- Value Network --- #
+        value_token_with_hidden_state = ValueToken()(hidden_state)
+        
+        value_logits = Encoder(self.config.value_head)(value_token_with_hidden_state)
+        
+        # Only return the value token
+        value_logits = value_logits[..., 0, :]
+        
+        # Now optionally we could apply one final MLP to get the logits
+        value_logits = FFNSwiGLU()(value_logits)
+        
+        return policy_logits, value_logits
+    
+class DynamicsNetwork(nn.Module):
+    """
+    Dynamics Network to return the next hidden state and reward
+    given an action and previous hidden state
+    
+    Embed the action as a vector, and concatenate it to the hidden state
+    at the embedding dimension (..., sequence, embedding)
+    
+    Then pass through an Encoder with a projection of the original hidden state
+    """
 
 
 """

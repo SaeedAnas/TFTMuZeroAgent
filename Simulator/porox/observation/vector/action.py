@@ -30,13 +30,13 @@ class ActionVector(ActionBase, ActionVectorBase):
         1 | | | | | ... | | x 38
         
         55 :
-        0-27 -> Board Slots (28)
-        28-36 -> Bench Slots (9)
-        37-46 -> Item Bench Slots (10)
-        47-51 -> Shop Slots (5)
-        52 -> Pass
-        53 -> Level
-        54 -> Refresh
+        0 -> Pass
+        1 -> Level
+        2 -> Refresh
+        3-30 -> Board Slots (28)
+        31-39 -> Bench Slots (9)
+        40-49 -> Item Bench Slots (10)
+        50-54 -> Shop Slots (5)
         
         38 :
         0-27 -> Board Slots
@@ -52,13 +52,13 @@ class ActionVector(ActionBase, ActionVectorBase):
         
         Action Space: (55, 38)
         55:
-        |0|1|2|3|4|5|6|7|8|9|10|11|12|13|...|27| (Board Slots)
-        |28|29|30|31|32|33|34|35|36| (Bench Slots)
-        |37|38|39|40|41|42|43|44|45|46| (Item Bench Slots)
-        |47|48|49|50|51| (Shop Slots)
-        |52| (Pass)
-        |53| (Level)
-        |54| (Refresh)
+        |0| (Pass)
+        |1| (Level)
+        |2| (Refresh)
+        |3|4|5|...|30| (Board Slots) (28)
+        |31|32|33|34|35|36|37|38|39| (Bench Slots) (9)
+        |40|41|42|43|44|45|46|47|48|49| (Item Bench Slots) (10)
+        |50|51|52|53|54| (Shop Slots) (5)
         
         38:
         0-27 -> Board Slots
@@ -69,8 +69,18 @@ class ActionVector(ActionBase, ActionVectorBase):
         
         col, index = action // 38, action % 38
         
-        action = []
+        if col == 0:
+            return [0, 0, 0]
 
+        elif col == 1:
+            return [1, 0, 0]
+
+        elif col == 2:
+            return [2, 0, 0]
+
+        col -= 3
+        action = []
+            
         # Board and Bench slots
         if col < 37:
             from_loc = col
@@ -91,18 +101,6 @@ class ActionVector(ActionBase, ActionVectorBase):
         elif col < 52:
             action = [3, col - 47, 0]
             
-        # Pass Action
-        elif col == 52:
-            action = [0, 0, 0]
-        
-        # Level Action
-        elif col == 53:
-            action = [1, 0, 0]
-        
-        # Refresh Action
-        elif col == 54:
-            action = [2, 0, 0]
-            
         return action
 
     def fetch_action_mask(self):
@@ -112,14 +110,22 @@ class ActionVector(ActionBase, ActionVectorBase):
             55 
         1 | | | | | ... | | x 38
         
+        # 55 :
+        # 0-27 -> Board Slots (28)
+        # 28-36 -> Bench Slots (9)
+        # 37-46 -> Item Bench Slots (10)
+        # 47-51 -> Shop Slots (5)
+        # 52 -> Pass
+        # 53 -> Level
+        # 54 -> Refresh
         55 :
-        0-27 -> Board Slots (28)
-        28-36 -> Bench Slots (9)
-        37-46 -> Item Bench Slots (10)
-        47-51 -> Shop Slots (5)
-        52 -> Pass
-        53 -> Level
-        54 -> Refresh
+        0 -> Pass
+        1 -> Level
+        2 -> Refresh
+        3-30 -> Board Slots (28)
+        31-39 -> Bench Slots (9)
+        40-49 -> Item Bench Slots (10)
+        50-54 -> Shop Slots (5)
         
         38 :
         0-27 -> Board Slots
@@ -131,27 +137,27 @@ class ActionVector(ActionBase, ActionVectorBase):
         
         action_mask = np.zeros((55, 38))
         
-        # --- Board mask --- #
-        # Board mask is currently (7, 4, 38), so we need to reshape it to (28, 38)
-        action_mask[0:28, :] = np.reshape(self.move_sell_board_mask, (-1, 38))
-        
-        # --- Bench mask --- #
-        action_mask[28:37, :] = self.move_sell_bench_mask
-
-        # --- Item bench mask --- #
-        action_mask[37:47, :] = self.item_mask
-        
-        # --- Shop mask --- #
-        action_mask[47:52, 0] = self.buy_mask
-
         # --- Pass is always available --- #
-        action_mask[52, 0] = 1
+        action_mask[0, 0] = 1
 
         # --- Level mask --- #
-        action_mask[53, 0] = self.exp_mask
+        action_mask[1, 0] = self.exp_mask
 
         # --- Refresh mask --- #
-        action_mask[54, 0] = self.refresh_mask
+        action_mask[2, 0] = self.refresh_mask
+
+        # --- Board mask --- #
+        # Board mask is currently (7, 4, 38), so we need to reshape it to (28, 38)
+        action_mask[3:31, :] = np.reshape(self.move_sell_board_mask, (-1, 38))
+        
+        # --- Bench mask --- #
+        action_mask[31:40, :] = self.move_sell_bench_mask
+
+        # --- Item bench mask --- #
+        action_mask[40:50, :] = self.item_mask
+
+        # --- Shop mask --- #
+        action_mask[50:55, 0] = self.buy_mask
         
         return action_mask
 
