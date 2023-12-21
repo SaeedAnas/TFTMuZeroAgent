@@ -15,11 +15,17 @@ class MCTXConfig:
     
     # Defaults from MCTX repo
     max_depth: Optional[int] = None
+    
+    # Regular MuZero Policy
     dirichlet_fraction: float = 0.25
     dirichlet_alpha: float = 0.3
     pb_c_init: float = 1.25
     pb_c_base: float = 19652
     temperature: float = 1.0
+    
+    # Gumbel MuZero Policy
+    max_num_considered_actions: int = 60
+    gumbel_scale: float = 1.0
 
 @struct.dataclass
 class MuZeroConfig:

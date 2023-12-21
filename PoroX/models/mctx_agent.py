@@ -211,6 +211,24 @@ class MCTXAgent:
         
         return policy_output, root
     
+    def policy_gumbel(self, params: MuZeroParams, key: jax.random.PRNGKey, obs: BatchedObservation):
+        root = self.root_fn(params, key, obs)
+        invalid_actions = obs.action_mask
+        policy_output = mctx.gumbel_muzero_policy(
+                params=params,
+                rng_key=key,
+                root=root,
+                recurrent_fn=self.recurrent_fn,
+                invalid_actions=invalid_actions,
+                num_simulations=self.mc.num_simulations,
+                max_depth=self.mc.max_depth,
+                max_num_considered_actions=self.mc.max_num_considered_actions,
+                gumbel_scale=self.mc.gumbel_scale,
+        )
+        
+        return policy_output, root
+        
+    
     @partial(jax.jit, static_argnums=(0,))
     def root_fn(self, params: MuZeroParams, key: jax.random.PRNGKey, obs: BatchedObservation) -> mctx.RootFnOutput:
         del key

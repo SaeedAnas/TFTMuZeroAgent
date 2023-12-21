@@ -32,5 +32,31 @@ def test_muzero_network(first_obs, key):
     policy_output, root = apply(variables, key, obs)
     print(policy_output.action)
     
-    N=10
+    N=5
+    profile(N, apply, variables, key, obs)
+    
+def test_gumbel_muzero_network(first_obs, key):
+    obs = batch_utils.collect_shared_obs(first_obs)
+
+    repr_nn = RepresentationNetwork(test_config)
+    pred_nn = PredictionNetwork(test_config)
+    dyna_nn = DynamicsNetwork(test_config)
+
+    muzero = MCTXAgent(
+        representation_nn=repr_nn,
+        prediction_nn=pred_nn,
+        dynamics_nn=dyna_nn,
+        config=test_config.mctx_config
+    )
+
+    variables = muzero.init(key, obs)
+
+    @jax.jit
+    def apply(variables, key, obs):
+        return muzero.policy_gumbel(variables, key, obs)
+    
+    policy_output, root = apply(variables, key, obs)
+    print(policy_output.action)
+
+    N=5
     profile(N, apply, variables, key, obs)
