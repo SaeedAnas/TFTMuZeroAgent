@@ -3,7 +3,7 @@ import jax
 
 from Simulator.porox.tft_simulator import parallel_env, TFTConfig
 
-from PoroX.modules.observation import PoroXObservation
+from PoroX.modules.observation import PoroXObservation, PoroXAction
 
 from Simulator.porox.player import Player
 from Simulator import pool
@@ -26,7 +26,7 @@ def obs(player):
 
 @pytest.fixture(scope='session', autouse=True)
 def env():
-    config = TFTConfig(observation_class=PoroXObservation)
+    config = TFTConfig(observation_class=PoroXObservation, action_class=PoroXAction)
     return parallel_env(config)
     
 @pytest.fixture(scope='session', autouse=True)
@@ -40,7 +40,7 @@ def first_obs(env):
     terminated = {agent: False for agent in env.agents}
     truncated = {agent: False for agent in env.agents}
     actions = {
-        agent: sample_action(env, obs, agent)
+        agent: sample_action(env, obs, agent, invert=True)
         for agent in env.agents
         if (
             (agent in terminated and not terminated[agent])

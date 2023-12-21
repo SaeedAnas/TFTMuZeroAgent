@@ -1,6 +1,6 @@
 import numpy as np
 import chex
-from Simulator.porox.observation import ObservationVector
+from Simulator.porox.observation import ObservationVector, ActionVector
 
 @chex.dataclass(frozen=True)
 class PlayerObservation:
@@ -91,3 +91,22 @@ class PoroXObservation(ObservationVector):
             items=self.item_bench_zeros,
             traits=self.trait_zeros
         )
+        
+class PoroXAction(ActionVector):
+    def fetch_action_mask(self):
+        """
+        The ActionVector action mask gives valid actions 1 and invalid actions 0.
+        MCTX on the other hand excpects valid actions to be 0 and invalid actions to be 1.
+        
+        So we need to flip the mask.
+        """
+        mask = super().fetch_action_mask()
+        mask = 1 - mask
+        
+        # Flatten mask on last two dimensions
+        action_shape = mask.shape
+        mask_flattened = np.reshape(mask, action_shape[:-2] + (-1,))
+        
+        # I flatten just so its easier to apply the mask with mctx
+        
+        return mask_flattened

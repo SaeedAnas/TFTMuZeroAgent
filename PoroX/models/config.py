@@ -1,3 +1,4 @@
+from typing import Optional
 from flax import struct
 
 from PoroX.models.components.embedding import (
@@ -8,7 +9,21 @@ from PoroX.models.components.transformer import EncoderConfig
 from PoroX.models.player_encoder import PlayerConfig
 
 @struct.dataclass
+class MCTXConfig:
+    discount: float = 0.997
+    num_simulations: int = 60
+    
+    # Defaults from MCTX repo
+    max_depth: Optional[int] = None
+    dirichlet_fraction: float = 0.25
+    dirichlet_alpha: float = 0.3
+    pb_c_init: float = 1.25
+    pb_c_base: float = 19652
+    temperature: float = 1.0
+
+@struct.dataclass
 class MuZeroConfig:
+    mctx_config: MCTXConfig
     player_encoder: PlayerConfig
     cross_encoder: EncoderConfig
     merge_encoder: EncoderConfig
@@ -18,6 +33,8 @@ class MuZeroConfig:
     reward_head: EncoderConfig
 
 test_config = MuZeroConfig(
+    mctx_config=MCTXConfig(),
+
     player_encoder= PlayerConfig(
         embedding=EmbeddingConfig( # Hidden state of 256
             champion_embedding_size=40,

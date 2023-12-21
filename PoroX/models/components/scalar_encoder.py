@@ -2,6 +2,7 @@
 # Taken from https://github.com/google-research/google-research/blob/master/muzero/core.py
 
 from functools import partial
+import jax
 import jax.numpy as jnp
 from jax import jit
 
@@ -63,3 +64,8 @@ class ScalarEncoder:
         above_min = num_steps * self.step_size
         value = above_min + self.min_value
         return value
+    
+    @partial(jit, static_argnums=(0,))
+    def decode_softmax(self, logits: jnp.ndarray) -> float:
+        """Decode the output of mlp to a scalar value using softmax"""
+        return self.decode(jax.nn.softmax(logits))

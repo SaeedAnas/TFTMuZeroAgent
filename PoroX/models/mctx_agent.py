@@ -1,16 +1,19 @@
+from functools import partial
+import chex
 from flax import linen as nn
 from jax import numpy as jnp
 import jax
+import mctx
 
 from PoroX.modules.observation import BatchedObservation
-import PoroX.modules.batch_utils as batch_utils
 
-from PoroX.models.player_encoder import PlayerEncoder, CrossPlayerEncoder, GlobalPlayerEncoder
-from PoroX.models.components.transformer import EncoderConfig, CrossAttentionEncoder, Encoder
+from PoroX.models.player_encoder import CrossPlayerEncoder, GlobalPlayerEncoder
+from PoroX.models.components.transformer import CrossAttentionEncoder, Encoder
 from PoroX.models.components.value_encoder import ValueEncoder
+from PoroX.models.components.scalar_encoder import ScalarEncoder
 from PoroX.models.components.embedding import PolicyActionTokens, ActionEmbedding
 from PoroX.models.components.fc import FFNSwiGLU
-from PoroX.models.config import MuZeroConfig
+from PoroX.models.config import MuZeroConfig, MCTXConfig
     
 class RepresentationNetwork(nn.Module):
     """
@@ -83,9 +86,11 @@ class PredictionNetwork(nn.Module):
         # Flatten the policy
         policy_logits_flattened = jnp.reshape(policy_logits, policy_shape[:-2] + (hidden_dim,))
         # Apply MLP
-        policy_logits_flattened = FFNSwiGLU(hidden_dim=hidden_dim)(policy_logits_flattened)
+        policy_logits = FFNSwiGLU(hidden_dim=hidden_dim)(policy_logits_flattened)
+
         # Reshape back to original shape
-        policy_logits = jnp.reshape(policy_logits_flattened, policy_shape)
+        # policy_logits = jnp.reshape(policy_logits_flattened, policy_shape)
+        # The final reshape is unnecessary because we need to reshape it again to apply softmax
         
         # --- Value Network --- #
         value_logits = ValueEncoder(self.config.value_head)(hidden_state)
@@ -136,6 +141,110 @@ Prediction Network: policy_logits, value = P(hidden_state)
 Dynamics Network: hidden_state, reward = D(hidden_state, action)
 
 """
+
+# Based heavily on https://github.com/bwfbowen/muax/
+@chex.dataclass(frozen=True)
+class MuZeroParams:
+    represnentation: nn.Module
+    prediction: nn.Module
+    dynamics: nn.Module
+
+class MCTXAgent:
+    def __init__(self,
+                 representation_nn: nn.Module,
+                 prediction_nn: nn.Module,
+                 dynamics_nn: nn.Module,
+                 config: MCTXConfig,
+                 ):
+        
+
+        self.represnetation_nn = representation_nn
+        self.prediction_nn = prediction_nn
+        self.dynamics_nn = dynamics_nn
+        
+        # TODO: Make this configurable
+        self.scalar_encoder = ScalarEncoder(
+            min_value=-999,
+            max_value=999,
+            num_steps=192
+        )
+
+        self.mc = config
+        
+        
+    def init(self, key: jax.random.PRNGKey, sample_obs: BatchedObservation):
+        repr_variables = self.represnetation_nn.init(key, sample_obs)
+        
+        hidden_state = self.represnetation_nn.apply(repr_variables, sample_obs)
+
+        prediction_variables = self.prediction_nn.init(key, hidden_state)
+
+        dynamics_variables = self.dynamics_nn.init(key, hidden_state, jnp.array([0]))
+        
+        params = MuZeroParams(
+            represnentation=repr_variables,
+            prediction=prediction_variables,
+            dynamics=dynamics_variables
+        )
+        
+        self.params = params
+        return self.params
+    
+    def policy(self, params: MuZeroParams, key: jax.random.PRNGKey, obs: BatchedObservation):
+        root = self.root_fn(params, key, obs)
+        invalid_actions = obs.action_mask
+        
+        policy_output = mctx.muzero_policy(
+            params=params,
+            rng_key=key,
+            root=root,
+            recurrent_fn=self.recurrent_fn,
+            invalid_actions=invalid_actions,
+            num_simulations=self.mc.num_simulations,
+            max_depth=self.mc.max_depth,
+            dirichlet_fraction=self.mc.dirichlet_fraction,
+            dirichlet_alpha=self.mc.dirichlet_alpha,
+            pb_c_init=self.mc.pb_c_init,
+            pb_c_base=self.mc.pb_c_base,
+            temperature=self.mc.temperature,
+        )
+        
+        return policy_output, root
+    
+    @partial(jax.jit, static_argnums=(0,))
+    def root_fn(self, params: MuZeroParams, key: jax.random.PRNGKey, obs: BatchedObservation) -> mctx.RootFnOutput:
+        del key
+
+        hidden_state = self.represnetation_nn.apply(params.represnentation, obs)
+        policy_logits, value_logits = self.prediction_nn.apply(params.prediction, hidden_state)
+        value = self.scalar_encoder.decode_softmax(value_logits)
+        
+        return mctx.RootFnOutput(
+            prior_logits=policy_logits,
+            value=value,
+            embedding=hidden_state
+        )
+        
+    @partial(jax.jit, static_argnums=(0,))
+    def recurrent_fn(self, params: MuZeroParams, key: jax.random.PRNGKey, action, embedding) -> (mctx.RecurrentFnOutput, jnp.ndarray):
+        del key
+
+        next_hidden_state, reward_logits = self.dynamics_nn.apply(params.dynamics, embedding, action)
+        policy_logits, value_logits = self.prediction_nn.apply(params.prediction, next_hidden_state)
+
+        reward = self.scalar_encoder.decode_softmax(reward_logits)
+        value = self.scalar_encoder.decode_softmax(value_logits)
+        
+        discount = jnp.ones_like(reward) * self.mc.discount
+        
+        recurrent_output = mctx.RecurrentFnOutput(
+            reward=reward,
+            discount=discount,
+            prior_logits=policy_logits,
+            value=value,
+        )
+
+        return recurrent_output, next_hidden_state
 
 class MCTSAgent:
     def act(self, obs):

@@ -19,10 +19,16 @@ def sample_action(
     env: ParallelEnv[AgentID, ObsType, ActionType],
     obs: dict[AgentID, ObsType],
     agent: AgentID,
+    invert: bool = False,
 ) -> ActionType:
     agent_obs = obs[agent]
     if isinstance(agent_obs, dict) and "action_mask" in agent_obs:
-        legal_actions = np.flatnonzero(agent_obs["action_mask"])
+        action_mask = agent_obs["action_mask"]
+
+        if invert: # MCTX uses 0 for valid actions, 1 for invalid actions
+            action_mask = 1 - action_mask
+
+        legal_actions = np.flatnonzero(action_mask)
         if len(legal_actions) == 0:
             return 0
         return random.choice(legal_actions)
@@ -32,28 +38,20 @@ def softmax_action(
         policy_logits,
         action_mask,
 ):
-    # Policy logits are (..., 55, 38)
-    # Need to flatten to (..., 55*38)
+    # Policy logits are (..., 55*38)
     # Mask out illegal actions
     # Apply softmax
     # Select action using argmax
     
-    # Flatten
-    policy_shape = policy_logits.shape
-    policy_flattened = jnp.reshape(policy_logits, policy_shape[:-2] + (-1,))
-    
-    action_shape = action_mask.shape
-    action_mask_flattened = jnp.reshape(action_mask, action_shape[:-2] + (-1,))
-    
-    # Mask out illegal actions
-    policy_flattened = policy_flattened * action_mask_flattened
-
     # Apply softmax
-    policy_flattened = jax.nn.softmax(policy_flattened, axis=-1)
+    policy_probs = jax.nn.softmax(policy_logits, axis=-1)
+    
+    # Masked argmax
+    to_argmax = jnp.where(action_mask, -jnp.inf, policy_probs)
 
     # Select action using argmax
-    action = jnp.argmax(policy_flattened, axis=-1)
-
+    action = jnp.argmax(to_argmax, axis=-1).astype(jnp.int32)
+    
     return action
     
 
