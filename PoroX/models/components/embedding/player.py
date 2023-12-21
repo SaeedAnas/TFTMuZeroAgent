@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from PoroX.modules.observation import PlayerObservation
 
 from PoroX.models.components.scalar_encoder import ScalarEncoder
-from PoroX.models.components.fc import MLP
+from PoroX.models.components.fc import MLP, FFNSwiGLU
 
 # -- Config -- #
 @struct.dataclass
@@ -119,22 +119,120 @@ class TraitEmbedding(nn.Module):
             vector_size(self.config)
             ])(x)
         
-class PlayerIDEmbedding(nn.Module):
+class ScalarEmbedding(nn.Module):
     """
-    Embeds player id to a latent space
-    0-7 are the player ids
+    Compress the scalar values into fewer tokens to save compute
+    
+    # TODO: Make the scalar vector just match these tokens
+
+    Convert to:
+    - id token
+        0: playerID
+        13: opponent1
+        14: opponent2
+        15: opponent3
+    
+    - actions remaining
+        12: actions remaining
+
+    - health token
+        1: health
+    
+    - gold token
+        7: economy
+        8: gold
+
+    - level token
+        2: level
+        5: max units
+        6: available units
+        9: exp
+        10: exp to next level
+    
+    - game token
+        11: round
+        3: win streak
+        4: loss streak
+
     """
+
     config: EmbeddingConfig
+    
+    def setup(self):
+        self.scalar_encoder = ScalarEncoder(
+            min_value=self.config.scalar_min_value,
+            max_value=self.config.scalar_max_value,
+            num_steps=50
+        )
 
     @nn.compact
     def __call__(self, x):
-        ids = jnp.int16(x)
+        # --- ID Token --- #
+        playerID = x[..., 0:1]
+        opponents = x[..., 13:16]
+
+        id_token = jnp.concatenate([
+            playerID,
+            opponents
+        ], axis=-1)
         
-        player_id_embedding = nn.Embed(
-            num_embeddings=8,
-            features=vector_size(self.config))(ids)
+        # --- Actions Remaining --- #
+        action_token = x[..., 12:13]
+
+        # --- Health Token --- #
+        health_token = x[..., 1:2]
+
+        # --- Gold Token --- #
+        gold_token = x[..., 7:9]
         
-        return player_id_embedding
+        # --- Level Token --- #
+        level = x[..., 2:3]
+        units = x[..., 5:7]
+        exp = x[..., 9:11]
+
+        level_token = jnp.concatenate([
+            level,
+            units,
+            exp
+        ], axis=-1)
+        
+        # --- Game Token --- #
+        round = x[..., 11:12]
+        streak = x[..., 3:5]
+
+        game_token = jnp.concatenate([
+            round,
+            streak
+        ], axis=-1)
+        
+        # Run through FFN
+        def ffn():
+            return FFNSwiGLU(out_dim=vector_size(self.config))
+        
+        def encode_and_concat(x):
+            """Convert the scalars into vectors of the same size and concatenate"""
+            encoded_x = self.scalar_encoder.encode(x)
+            flattened_x = jnp.reshape(encoded_x, (encoded_x.shape[:-2] + (-1,)))
+            expanded_x = jnp.expand_dims(flattened_x, axis=-2)
+            return expanded_x
+            
+        id_token = ffn()(encode_and_concat(id_token))
+        action_token = ffn()(encode_and_concat(action_token))
+        health_token = ffn()(encode_and_concat(health_token))
+        gold_token = ffn()(encode_and_concat(gold_token))
+        level_token = ffn()(encode_and_concat(level_token))
+        game_token = ffn()(encode_and_concat(game_token))
+        
+        embeddings = jnp.concatenate([
+            id_token,
+            action_token,
+            health_token,
+            gold_token,
+            level_token,
+            game_token
+        ], axis=-2)
+        
+        return embeddings
 
     
 # -- Player Embedding -- #
@@ -145,36 +243,19 @@ class PlayerEmbedding(nn.Module):
     @nn.compact
     def __call__(self, x: PlayerObservation):
         champion_embeddings = ChampionEmbedding(self.config)(x.champions)
+
         item_bench_embeddings = ItemBenchEmbedding(self.config)(x.items)
+
         trait_embeddings = TraitEmbedding(self.config)(x.traits)
         trait_embeddings = jnp.expand_dims(trait_embeddings, axis=-2)
         
-        # PlayerID is the first scalar
-        playerID = x.scalars[..., 0:1]
-        # Matchups are the last 3 scalars
-        matchups = x.scalars[..., -3:]
-        # Update scalars to exclude player_id and matchups
-        scalars = x.scalars[..., 1:-3]
-        
-        playerIDs = jnp.concatenate([
-            matchups,
-            playerID
-        ], axis=-1)
-        
-        playerID_embedding = PlayerIDEmbedding(self.config)(playerIDs)
-        
-        scalar_embeddings = ScalarEncoder(
-            min_value=self.config.scalar_min_value,
-            max_value=self.config.scalar_max_value,
-            num_steps=vector_size(self.config)
-        ).encode(scalars)
-        
+        scalar_embeddings = ScalarEmbedding(self.config)(x.scalars)
+
         player_embedding = jnp.concatenate([
             champion_embeddings,
             item_bench_embeddings,
             trait_embeddings,
             scalar_embeddings,
-            playerID_embedding,
         ], axis=-2)
         
         return player_embedding

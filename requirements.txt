@@ -15,3 +15,11 @@ setuptools~=66.1.1
 scipy~=1.10.1
 torch~=2.0.1
 tensorboard
+
+jax
+flax
+chex
+optax
+orbax
+mctx
+clu

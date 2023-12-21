@@ -82,8 +82,7 @@ class GlobalPlayerSegmentFFN(nn.Module):
         shop    = x[..., 37:42, :]
         items   = x[..., 42:52, :]
         traits  = x[..., 52:53, :]
-        playerIDs = x[..., 53:57, :]
-        scalars = x[..., 57:, :]
+        scalars = x[..., 53:, :]
         
         def ffn(hidden_dim=self.config.hidden_dim, out_dim=self.config.out_dim):
             return FFNSwiGLU(hidden_dim, out_dim)
@@ -93,7 +92,6 @@ class GlobalPlayerSegmentFFN(nn.Module):
         shop_fc     = ffn()(shop)
         items_fc    = ffn()(items)
         traits_fc   = ffn()(traits)
-        ids_fc      = ffn()(playerIDs)
         scalars_fc  = ffn()(scalars)
 
         return jnp.concatenate([
@@ -102,7 +100,6 @@ class GlobalPlayerSegmentFFN(nn.Module):
             shop_fc,
             items_fc,
             traits_fc,
-            ids_fc,
             scalars_fc
         ], axis=-2)
 

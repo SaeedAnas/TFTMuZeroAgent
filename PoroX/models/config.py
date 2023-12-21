@@ -11,7 +11,7 @@ from PoroX.models.player_encoder import PlayerConfig
 @struct.dataclass
 class MCTXConfig:
     discount: float = 0.997
-    num_simulations: int = 60
+    num_simulations: int = 50
     
     # Defaults from MCTX repo
     max_depth: Optional[int] = None
@@ -49,9 +49,9 @@ test_config = MuZeroConfig(
         ),
         
         # Total: 75
-        # 28 board, 9 bench, 5 shop, 10 items, 1 trait, 12 scalars, 3 matchups, 1 player_id
+        # 28 board, 9 bench, 5 shop, 10 items, 1 trait, 6 scalar tokens
         segment=SegmentConfig(
-            segments=expand_segments([28, 9, 5, 10, 1, 12, 3, 1]),
+            segments=expand_segments([28, 9, 5, 10, 1, 6]),
             out_dim=192, # Reduce to 192
         ),
         segment_ffn=GlobalPlayerSegmentFFN,
