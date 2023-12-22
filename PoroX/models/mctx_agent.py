@@ -14,7 +14,7 @@ from PoroX.models.components.value_encoder import ValueEncoder
 from PoroX.models.components.scalar_encoder import ScalarEncoder
 from PoroX.models.components.embedding import PolicyActionTokens, ActionEmbedding
 from PoroX.models.components.fc import FFNSwiGLU
-from PoroX.models.config import MuZeroConfig, MCTXConfig
+from PoroX.models.config import MuZeroConfig, MCTXConfig, PoroXConfig
     
 class RepresentationNetwork(nn.Module):
     """
@@ -262,11 +262,48 @@ class MCTXAgent:
         )
 
         return recurrent_output, next_hidden_state
-
-class MCTSAgent:
-    def act(self, obs):
-        actions = {
-            player_id: 0 for player_id in obs.keys()
-        }
-
-        return actions
+    
+class PoroXV1:
+    def __init__(self, config: PoroXConfig, key: jax.random.PRNGKey, obs: BatchedObservation):
+        self.config = config
+        
+        repr_nn = RepresentationNetwork(config.muzero)
+        pred_nn = PredictionNetwork(config.muzero)
+        dyna_nn = DynamicsNetwork(config.muzero)
+        
+        self.muzero = MCTXAgent(
+            representation_nn=repr_nn,
+            prediction_nn=pred_nn,
+            dynamics_nn=dyna_nn,
+            config=config.mctx
+        )
+        
+        self.variables = self.muzero.init(key, obs)
+        self.key = key
+        
+    # TODO: Save and load checkpoints
+    def save(self):
+        pass
+    def load(self):
+        pass
+        
+    @partial(jax.jit, static_argnums=(0,))
+    def policy(self, obs: BatchedObservation):
+        return self.muzero.policy_gumbel(self.variables, self.key, obs)
+    
+    # @partial(jax.jit, static_argnums=(0,))
+    def unflatten(self, policy_output, root, original_shape):
+        actions = batch_utils.unflatten(policy_output.action, original_shape)
+        action_weights = batch_utils.unflatten(policy_output.action_weights, original_shape)
+        values = batch_utils.unflatten(root.value, original_shape)
+        
+        return actions, action_weights, values
+        
+    def act(self, obs: BatchedObservation, game_batched=False):
+        if game_batched:
+            obs, original_shape = batch_utils.flatten_multi_game_obs(obs)
+            policy_output, root = self.policy(obs)
+            return self.unflatten(policy_output, root, original_shape)
+        else:
+            policy_output, root = self.policy(obs)
+            return policy_output.action, policy_output.action_weights, root.value

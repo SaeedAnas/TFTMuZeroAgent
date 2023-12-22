@@ -84,7 +84,7 @@ class ActionVector(ActionBase, ActionVectorBase):
         action = []
             
         # Board and Bench slots
-        if col < 39:
+        if col < 40:
             from_loc = col - 3
 
             if index == 37:

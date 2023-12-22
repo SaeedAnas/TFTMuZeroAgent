@@ -22,7 +22,7 @@ class PlayerManager:
         
         self.player_states = {
             player: player_class(self.pool_obj, player_id)
-            for player_id, player in enumerate(self.players)
+            for player_id, player in enumerate(self.player_ids)
         }
         
         # In order to support multiple observation types, 

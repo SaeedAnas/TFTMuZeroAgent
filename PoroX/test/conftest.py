@@ -27,7 +27,7 @@ def obs(player):
 
 @pytest.fixture(scope='session', autouse=True)
 def env():
-    config = TFTConfig(observation_class=PoroXObservation, action_class=PoroXAction)
+    config = TFTConfig(observation_class=PoroXObservation)
     return parallel_env(config)
     
 @pytest.fixture(scope='session', autouse=True)
@@ -41,7 +41,7 @@ def first_obs(env):
     terminated = {agent: False for agent in env.agents}
     truncated = {agent: False for agent in env.agents}
     actions = {
-        agent: sample_action(env, obs, agent, invert=True)
+        agent: sample_action(env, obs, agent)
         for agent in env.agents
         if (
             (agent in terminated and not terminated[agent])
@@ -77,5 +77,27 @@ def first_batched_obs(first_obs):
         obs_list.append(obs)
         
     return obs_list
+
+@pytest.fixture(scope='session', autouse=True)
+def nth_obs(env):
+    """Gets the nth observation after n random actions are taken."""
+    N = 10
+
+    obs, infos = env.reset()
+    terminated = {agent: False for agent in env.agents}
+    truncated = {agent: False for agent in env.agents}
+    
+    for _ in range(N):
+        actions = {
+            agent: sample_action(env, obs, agent)
+            for agent in env.agents
+            if (
+                (agent in terminated and not terminated[agent])
+                or (agent in truncated and not truncated[agent])
+            )
+        }
+        obs,rew,terminated,truncated,info = env.step(actions)
+    
+    return obs
             
         

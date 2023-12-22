@@ -19,15 +19,10 @@ def sample_action(
     env,
     obs,
     agent,
-    invert = False,
 ) -> ActionType:
     agent_obs = obs[agent]
     if isinstance(agent_obs, dict) and "action_mask" in agent_obs:
         action_mask = agent_obs["action_mask"]
-
-        if invert: # MCTX uses 0 for valid actions, 1 for invalid actions
-            action_mask = 1 - action_mask
-
         legal_actions = np.flatnonzero(action_mask)
         if len(legal_actions) == 0:
             return 0

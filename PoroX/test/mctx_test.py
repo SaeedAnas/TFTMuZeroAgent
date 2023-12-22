@@ -61,6 +61,7 @@ def test_gumbel_muzero_network(first_obs, key):
     print(actions)
 
     N=5
+    print(f"Profiling 1 game, {mctx_config.num_simulations} simulations, {mctx_config.max_num_considered_actions} sampled actions.")
     profile(N, apply, variables, key, obs)
     
 def test_batched_gumbel_muzero_network(first_batched_obs, key):
@@ -85,11 +86,10 @@ def test_batched_gumbel_muzero_network(first_batched_obs, key):
         return muzero.policy_gumbel(variables, key, obs)
     
     policy_output, root = apply(variables, key, obs)
-    actions = jax.vmap(action_space_to_action)(policy_output.action)
-    actions = batch_utils.unflatten(actions, original_shape)
+    actions = batch_utils.unflatten(policy_output.action, original_shape)
     print(actions)
 
     N=3
-    print(f"Profiling {3} batched games, {mctx_config.num_simulations} simulations, {mctx_config.max_num_considered_actions} sampled actions.")
+    print(f"Profiling {actions.shape[0]} batched games, {mctx_config.num_simulations} simulations, {mctx_config.max_num_considered_actions} sampled actions.")
     profile(N, apply, variables, key, obs)
 

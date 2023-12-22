@@ -14,6 +14,10 @@ class BatchedObservation:
     players: PlayerObservation
     action_mask: chex.ArrayDevice
     opponents: PlayerObservation
+    
+    # Mapping to keep track of which player is which
+    player_ids: chex.ArrayDevice
+    player_len: chex.ArrayDevice
 
 
 class PoroXObservation(ObservationVector):
@@ -104,9 +108,9 @@ class PoroXAction(ActionVector):
         mask = 1 - mask
         
         # Flatten mask on last two dimensions
-        action_shape = mask.shape
-        mask_flattened = np.reshape(mask, action_shape[:-2] + (-1,))
+        # action_shape = mask.shape
+        # mask_flattened = np.reshape(mask, action_shape[:-2] + (-1,))
         
         # I flatten just so its easier to apply the mask with mctx
         
-        return mask_flattened
+        return mask

@@ -11,7 +11,7 @@ from PoroX.models.player_encoder import PlayerConfig
 @struct.dataclass
 class MCTXConfig:
     discount: float = 0.997
-    num_simulations: int = 128
+    num_simulations: int = 8
     
     # Defaults from MCTX repo
     max_depth: Optional[int] = None
@@ -24,7 +24,7 @@ class MCTXConfig:
     temperature: float = 1.0
     
     # Gumbel MuZero Policy
-    max_num_considered_actions: int = 64
+    max_num_considered_actions: int = 4
     gumbel_scale: float = 1.0
 
 @struct.dataclass
@@ -42,6 +42,11 @@ class MuZeroConfig:
     # Dynamics Network
     dynamics_head: EncoderConfig
     reward_head: EncoderConfig
+    
+@struct.dataclass
+class PoroXConfig:
+    muzero: MuZeroConfig
+    mctx: MCTXConfig
     
 muzero_config = MuZeroConfig(
     player_encoder= PlayerConfig(
@@ -98,3 +103,8 @@ muzero_config = MuZeroConfig(
 )
 
 mctx_config = MCTXConfig()
+
+porox_config = PoroXConfig(
+    muzero=muzero_config,
+    mctx=mctx_config,
+)

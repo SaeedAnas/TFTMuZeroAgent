@@ -2,13 +2,6 @@ import jax
 import jax.numpy as jnp
 from PoroX.modules.observation import BatchedObservation, PlayerObservation
 
-# Broadcast Player State to [...B, P, S1, L]
-@jax.jit
-def expand_and_get_shape(player_state, opponent_state):
-    broadcasted_shape = player_state.shape[:-2] + opponent_state.shape[-3:-2] + player_state.shape[-2:]
-    expanded_player_state = jnp.expand_dims(player_state, axis=-3)
-    return broadcasted_shape, expanded_player_state
-
 @jax.jit
 def flatten(x):
     """
@@ -47,43 +40,47 @@ def concat(collection, axis=0):
     return jax.tree_map(lambda *xs: jnp.concatenate(xs, axis=axis), *collection)
 
 @jax.jit
-def split(collection, schema):
-    """
-    Splits a batched collection back into a list of collections based on a schema.
-    """
-    # TODO: Figure out how to do this with jax.tree_map
-    ...
-
-@jax.jit
 def collect_obs(obs: dict):
+    # Ensure same order
+    values = list(obs.values())
+
     players = [
         player_obs["player"]
-        for player_obs in obs.values()
+        for player_obs in values
     ]
     
     action_mask = [
         player_obs["action_mask"]
-        for player_obs in obs.values()
+        for player_obs in values
     ]
     
     opponents = [
         collect(player_obs["opponents"])
-        for player_obs in obs.values()
+        for player_obs in values
     ]
     
     players = collect(players)
     action_mask = collect(action_mask)
     opponents = collect(opponents)
     
+    player_ids = players.scalars[:, 0]
+    
     # Pad to have 8 players
     players = create_padded_player(players)
     action_mask = pad_array(action_mask)
     opponents = create_padded_player(opponents)
+    player_ids = pad_array(player_ids)
+    
+    # Make action mask compatible with mctx
+    action_mask = invert_and_flatten_action_mask(action_mask)
 
     return BatchedObservation(
         players=players,
         action_mask=action_mask,
         opponents=opponents,
+
+        player_ids=jnp.array(player_ids).astype(jnp.int32),
+        player_len=jnp.array(len(values)).astype(jnp.int32)
     )
 
 def create_padded_player(players: PlayerObservation):
@@ -122,6 +119,20 @@ def pad_array(array, max_length=8, axis=0):
     padded_array = jnp.pad(array, [(0, pad_length)] + [(0, 0)] * (array.ndim - 1))
     
     return padded_array
+
+@jax.jit
+def invert_and_flatten_action_mask(action_mask):
+    """Utility to make action mask be compatible with mctx"""
+    
+    # Flatten last two dimensions
+    action_shape = action_mask.shape
+    mask_flattened = jnp.reshape(action_mask, action_shape[:-2] + (-1,))
+    
+    # Invert mask
+    inverted_mask = 1 - mask_flattened
+    
+    return inverted_mask
+
     
 @jax.jit
 def collect_multi_game_obs(obs):
@@ -150,6 +161,9 @@ def flatten_multi_game_obs(obs):
         players=players,
         action_mask=action_mask,
         opponents=opponents,
+        
+        player_ids=obs.player_ids,
+        player_len=obs.player_len
     ), original_shape
     
 @jax.jit
@@ -169,3 +183,39 @@ def flatten_player_obs(player):
         traits=traits,
         scalars=scalars
     ), original_shape
+    
+def batch_map_actions(actions: jnp.ndarray, obs: BatchedObservation):
+    """
+    Actions are in shape (Game, Player, Action)
+    
+    Need to convert it into a list of actions for each game
+    [
+        {
+            "player_{id}": action
+        }
+    ]
+    
+    obs contains a mapping that links each action to a player_id
+    """
+    
+    action_dicts = []
+    
+    for i in range(len(actions)):
+        action_dict = map_actions(
+            actions[i],
+            obs.player_ids[i],
+            obs.player_len[i]
+        )
+        
+        action_dicts.append(action_dict)
+        
+    return action_dicts
+    
+def map_actions(actions: jnp.ndarray, player_ids: jnp.ndarray, player_len: jnp.int32):
+    actions = actions[:player_len]
+    player_ids = player_ids[:player_len]
+    
+    return {
+        f"player_{player_id}": action
+        for player_id, action in zip(player_ids, actions)
+    }
