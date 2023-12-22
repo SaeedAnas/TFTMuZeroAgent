@@ -6,6 +6,7 @@ import jax
 import mctx
 
 from PoroX.modules.observation import BatchedObservation
+import PoroX.modules.batch_utils as batch_utils
 
 from PoroX.models.player_encoder import CrossPlayerEncoder, GlobalPlayerEncoder
 from PoroX.models.components.transformer import CrossAttentionEncoder, Encoder
@@ -25,34 +26,30 @@ class RepresentationNetwork(nn.Module):
     """
     config: MuZeroConfig
     
-    # Don't ask what's going on here, I have no idea
     @nn.compact
     def __call__(self, obs: BatchedObservation):
+        # Encode the player and opponent observations using the same encoder
         states = GlobalPlayerEncoder(self.config.player_encoder)(obs)
         
-        # Split states into player and opponents
-        player_shape = obs.players.champions.shape[-3]
+        # First index is player, rest are opponents
         
-        player_states = states[..., :player_shape, :, :]
-        opponent_states = states[..., player_shape:, :, :]
+        # (Game Batch, Player Batch, ...)
+        player_embedding = states[..., 0, :, :]
+        # (Game Batch, Player Batch, 7, ...)
+        opponent_embeddings = states[..., 1:, :, :]
         
-        expanded_opponent_state = jnp.expand_dims(opponent_states, axis=-4)
-        broadcast_shape = opponent_states.shape[:-4] + player_states.shape[-3:-2] + opponent_states.shape[-3:]
-        broadcasted_opponent = jnp.broadcast_to(expanded_opponent_state, broadcast_shape)
+        # This will be (Game Batch, Player Batch, ...)
+        # Essentially it performs cross attention between the player and each opponent
+        # and then sums the results
+        cross_states = CrossPlayerEncoder(self.config.cross_encoder)(player_embedding, opponent_embeddings)
         
-        player_ids = obs.players.scalars[..., 0].astype(jnp.int32)
+        # Now we perform cross attention on the player and the sum of the opponents to get a final state
+        merged_states = CrossAttentionEncoder(self.config.merge_encoder)(player_embedding, context=cross_states)
         
-        # Create a mask that masks out the player's own state
-        mask = jnp.arange(player_states.shape[-3]) == player_ids[..., None]
-        masked_opponent_states = broadcasted_opponent * mask[..., None, None]
-        # I have no fucking clue what I'm doing but it jit compiles...
+        # Just a couple more self attention layers to get a really good representation
+        global_state = Encoder(self.config.global_encoder)(merged_states)
         
-        cross_states = CrossPlayerEncoder(self.config.cross_encoder)(player_states, masked_opponent_states)
-        
-        merged_states = CrossAttentionEncoder(self.config.merge_encoder)(player_states, context=cross_states)
-        
-        return merged_states
-    
+        return global_state
 
 class PredictionNetwork(nn.Module):
     """
@@ -191,7 +188,7 @@ class MCTXAgent:
         return self.params
     
     def policy(self, params: MuZeroParams, key: jax.random.PRNGKey, obs: BatchedObservation):
-        root = self.root_fn(params, key, obs)
+        root, original_shape = self.root_fn(params, key, obs)
         invalid_actions = obs.action_mask
         
         policy_output = mctx.muzero_policy(
@@ -212,8 +209,10 @@ class MCTXAgent:
         return policy_output, root
     
     def policy_gumbel(self, params: MuZeroParams, key: jax.random.PRNGKey, obs: BatchedObservation):
+
         root = self.root_fn(params, key, obs)
         invalid_actions = obs.action_mask
+
         policy_output = mctx.gumbel_muzero_policy(
                 params=params,
                 rng_key=key,

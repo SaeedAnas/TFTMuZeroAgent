@@ -282,14 +282,14 @@ class ObservationVector(ObservationBase, ObservationVectorBase):
         """Create private scalars for a player
 
         Private Scalars:
+            - gold: int
             - exp: int
             - exp to next level: int
-            - gold: int
         """
         return np.array([
+            player.gold,
             player.exp,
             player.level_costs[player.level] - player.exp,
-            player.gold,
         ])
 
     # -- Champion -- #

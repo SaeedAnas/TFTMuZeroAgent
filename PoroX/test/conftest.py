@@ -1,5 +1,6 @@
 import pytest
 import jax
+import random
 
 from Simulator.porox.tft_simulator import parallel_env, TFTConfig
 
@@ -50,3 +51,31 @@ def first_obs(env):
     obs,rew,terminated,truncated,info = env.step(actions)
     
     return obs
+
+@pytest.fixture(scope='session', autouse=True)
+def first_batched_obs(first_obs):
+    """
+    Clone the first observation into a list of observations.
+    Randomly remove some agents to make the batches varying sizes
+    to test if batch_utils will still work.
+    """
+    N = 3
+    
+    obs_list = []
+    
+    for _ in range(N):
+        obs = first_obs.copy()
+        
+        # num removed (between 0 and 5)
+        num_removed = random.randint(0, 3)
+        
+        # remove num_removed agents
+        for _ in range(num_removed):
+            agent = random.choice(list(obs.keys()))
+            obs.pop(agent)
+            
+        obs_list.append(obs)
+        
+    return obs_list
+            
+        

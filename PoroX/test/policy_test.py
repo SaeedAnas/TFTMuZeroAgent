@@ -4,14 +4,14 @@ import jax.numpy as jnp
 from clu import parameter_overview
 
 from PoroX.models.mctx_agent import RepresentationNetwork, PredictionNetwork
-from PoroX.models.config import test_config
+from PoroX.models.config import muzero_config as test_config
 
 import PoroX.modules.batch_utils as batch_utils
 from PoroX.test.utils import profile
 
 @pytest.fixture
 def hidden_state(first_obs, key):
-    obs = batch_utils.collect_shared_obs(first_obs)
+    obs = batch_utils.collect_obs(first_obs)
     
     repr_network = RepresentationNetwork(test_config)
     variables = repr_network.init(key, obs)

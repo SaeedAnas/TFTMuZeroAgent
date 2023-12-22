@@ -13,7 +13,7 @@ from PoroX.models.components.embedding import (
     SegmentEncoding, PlayerSegmentFFN, SegmentConfig, ActionEmbedding
 )
 from PoroX.models.mctx_agent import RepresentationNetwork
-from PoroX.models.config import test_config
+from PoroX.models.config import muzero_config as test_config
 
 import PoroX.modules.batch_utils as batch_utils
 from PoroX.test.utils import profile
@@ -73,7 +73,7 @@ def test_opponent_embedding(first_obs, key):
     profile(N, apply, variables, opponents)
     
 def test_representation_network(first_obs, key):
-    obs = batch_utils.collect_shared_obs(first_obs)
+    obs = batch_utils.collect_obs(first_obs)
     
     repr_network = RepresentationNetwork(config=test_config)
     variables = repr_network.init(key, obs)
@@ -88,8 +88,30 @@ def test_representation_network(first_obs, key):
     N=10
     profile(N, apply, variables, obs)
     
+def test_batch_representation_network(first_batched_obs, key):
+    obs = batch_utils.collect_multi_game_obs(first_batched_obs)
+    
+    repr_network = RepresentationNetwork(config=test_config)
+    variables = repr_network.init(key, obs)
+    
+    @jax.jit
+    def apply(variables, obs):
+        return repr_network.apply(variables, obs)
+    
+    x = apply(variables, obs)
+    print(x.shape)
+    
+    N=3
+    profile(N, apply, variables, obs)
+    
+    obs2 = batch_utils.collect_multi_game_obs(first_batched_obs[:2])
+    N=1
+    profile(N, apply, variables, obs2)
+    N=4
+    profile(N, apply, variables, obs2)
+    
 def test_params_representation_network(first_obs, key):
-    obs = batch_utils.collect_shared_obs(first_obs)
+    obs = batch_utils.collect_obs(first_obs)
 
     repr_network = RepresentationNetwork(config=test_config)
     variables = repr_network.init(key, obs)

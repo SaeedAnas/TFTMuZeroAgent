@@ -11,7 +11,7 @@ from PoroX.models.player_encoder import PlayerConfig
 @struct.dataclass
 class MCTXConfig:
     discount: float = 0.997
-    num_simulations: int = 50
+    num_simulations: int = 128
     
     # Defaults from MCTX repo
     max_depth: Optional[int] = None
@@ -24,30 +24,32 @@ class MCTXConfig:
     temperature: float = 1.0
     
     # Gumbel MuZero Policy
-    max_num_considered_actions: int = 60
+    max_num_considered_actions: int = 64
     gumbel_scale: float = 1.0
 
 @struct.dataclass
 class MuZeroConfig:
-    mctx_config: MCTXConfig
+    # Representation Network
     player_encoder: PlayerConfig
     cross_encoder: EncoderConfig
     merge_encoder: EncoderConfig
+    global_encoder: EncoderConfig
+    
+    # Prediction Network
     policy_head: EncoderConfig
     value_head: EncoderConfig 
+    
+    # Dynamics Network
     dynamics_head: EncoderConfig
     reward_head: EncoderConfig
-
-test_config = MuZeroConfig(
-    mctx_config=MCTXConfig(),
-
+    
+muzero_config = MuZeroConfig(
     player_encoder= PlayerConfig(
         embedding=EmbeddingConfig( # Hidden state of 256
             champion_embedding_size=40,
             item_embedding_size=20,
             trait_embedding_size=20,
         ),
-        
         # Total: 75
         # 28 board, 9 bench, 5 shop, 10 items, 1 trait, 6 scalar tokens
         segment=SegmentConfig(
@@ -56,7 +58,7 @@ test_config = MuZeroConfig(
         ),
         segment_ffn=GlobalPlayerSegmentFFN,
         encoder=EncoderConfig(
-            num_blocks=8,
+            num_blocks=4,
             num_heads=4,
         ),
     ),
@@ -65,6 +67,10 @@ test_config = MuZeroConfig(
         num_heads=2,
     ),
     merge_encoder=EncoderConfig(
+        num_blocks=4,
+        num_heads=4,
+    ),
+    global_encoder=EncoderConfig(
         num_blocks=4,
         num_heads=4,
     ),
@@ -90,3 +96,5 @@ test_config = MuZeroConfig(
         num_heads=2,
     )
 )
+
+mctx_config = MCTXConfig()

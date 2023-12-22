@@ -133,15 +133,7 @@ class PlayerManager:
             if not self.terminations[player]
             else observation_states[player].fetch_dead_observation()
             for player in self.player_ids
-
-            # TODO: make this an option
-            # if player != player_id
-
-            # Currently not used to make my life easier
-            # Essentially what I'm doing right now is 
-            # passing all the opponent observations to the first player
-            # And using the same opponent observations for all players
-            # This effectively reduces computations from 64 to 16
+            if player != player_id
         ]
 
         return observations
@@ -172,12 +164,6 @@ class PlayerManager:
                 
                 self.get_observation_state(player).update_game_round()
                 self.get_action_handler(player).update_game_round()
-                
-                # This is only here so that the Encoder doesn't have to do 64 operations, but instead 16
-                # This ensures that the masked player states are the same for all players
-                # 8 full players and 8 masked players
-                # If we had separate masked players for each player, then we would have to do 64 operations
-                self.opponent_observations[player] = self.fetch_opponent_observations(player)
 
     def refresh_all_shops(self):
         for player in self.players:
@@ -229,11 +215,7 @@ class PlayerManager:
         if action_type == 0:
             player.pass_action()
             # Update opponent observations on pass action
-            # self.opponent_observations[player_id] = self.fetch_opponent_observations(
-            #     player_id
-            # )
-            # Lets only update opponent obs at the beginning of the round
-            # This way I can use an optimized encoder that does 16 operations instead of 64
+            self.opponent_observations[player_id] = self.fetch_opponent_observations(player_id)
 
         # Level Action
         elif action_type == 1:

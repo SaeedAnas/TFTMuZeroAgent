@@ -54,11 +54,22 @@ class GlobalPlayerEncoder(nn.Module):
     
     @nn.compact
     def __call__(self, obs: BatchedObservation):
-        # 0 is the player, rest are opponents
-        # First we embed all the players
+        # Player shape is (Game Batch, Player Batch, ...)
+        # Opponent shape is (Game Batch, Player Batch, 7, ...)
+        
+        # First we need to combine the player and opponent embeddings
+        # (Game Batch, 8, 8, ...) where the player embedding is first
+        # and is concatenated with the opponent embeddings
+        
+        # First embed the players and opponents
         player_embeddings = self.player_embedding(obs.players)
         opponent_embeddings = self.player_embedding(obs.opponents)
         
+        # First expand the player embedding to (Game Batch, Player Batch, 1, ...)
+        player_embeddings = jnp.expand_dims(player_embeddings, axis=-3)
+        
+        # Concatenate the player and opponent embeddings
+        # (Game Batch, Player Batch, 8, ...)
         all_embeddings = jnp.concatenate([
             player_embeddings,
             opponent_embeddings

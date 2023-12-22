@@ -16,10 +16,10 @@ from Simulator import pool
 
 # --- Utils ---
 def sample_action(
-    env: ParallelEnv[AgentID, ObsType, ActionType],
-    obs: dict[AgentID, ObsType],
-    agent: AgentID,
-    invert: bool = False,
+    env,
+    obs,
+    agent,
+    invert = False,
 ) -> ActionType:
     agent_obs = obs[agent]
     if isinstance(agent_obs, dict) and "action_mask" in agent_obs:
