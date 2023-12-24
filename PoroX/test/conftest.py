@@ -59,7 +59,7 @@ def first_batched_obs(first_obs):
     Randomly remove some agents to make the batches varying sizes
     to test if batch_utils will still work.
     """
-    N = 3
+    N = 5
     
     obs_list = []
     
@@ -99,5 +99,22 @@ def nth_obs(env):
         obs,rew,terminated,truncated,info = env.step(actions)
     
     return obs
-            
+
+@pytest.fixture(scope='session', autouse=True)
+def test_agent(env):
+    class TestAgent:
+        def __init__(self, env):
+            self.env = env
+
+        def act(self, batch_obs):
+            batch_actions = []
+            for obs in batch_obs:
+                actions = {
+                    agent: sample_action(self.env, obs, agent)
+                    for agent in obs.keys()
+                }
+                batch_actions.append(actions)
+            return batch_actions
+        
+    return TestAgent(env)
         

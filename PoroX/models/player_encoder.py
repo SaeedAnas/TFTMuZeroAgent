@@ -61,7 +61,6 @@ class GlobalPlayerEncoder(nn.Module):
         # (Game Batch, 8, 8, ...) where the player embedding is first
         # and is concatenated with the opponent embeddings
         
-        # First embed the players and opponents
         player_embeddings = self.player_embedding(obs.players)
         opponent_embeddings = self.player_embedding(obs.opponents)
         

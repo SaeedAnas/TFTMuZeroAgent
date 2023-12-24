@@ -12,7 +12,7 @@ from PoroX.models.player_encoder import CrossPlayerEncoder, GlobalPlayerEncoder
 from PoroX.models.components.transformer import CrossAttentionEncoder, Encoder
 from PoroX.models.components.value_encoder import ValueEncoder
 from PoroX.models.components.scalar_encoder import ScalarEncoder
-from PoroX.models.components.embedding import PolicyActionTokens, ActionEmbedding
+from PoroX.models.components.embedding import PolicyActionTokens, ActionEmbedding, ActionGlobalToken, ValueToken, PrependTokens
 from PoroX.models.components.fc import FFNSwiGLU
 from PoroX.models.config import MuZeroConfig, MCTXConfig, PoroXConfig
     
@@ -94,6 +94,77 @@ class PredictionNetwork(nn.Module):
         
         return policy_logits, value_logits
     
+class PredictionNetworkV2(nn.Module):
+    """
+    Only use a single policy token and run MHSA to get the policy logits
+    """
+    config: MuZeroConfig
+    
+    @nn.compact
+    def __call__(self, hidden_state):
+        # --- Policy Network --- #
+        # Create one embedding token for the entire policy 
+        # and concatenate it to the hidden state
+        policy_token_with_hidden_state = ValueToken()(hidden_state)
+        
+        policy_logits = Encoder(self.config.policy_head)(policy_token_with_hidden_state)
+        
+        # Only take the first token
+        policy_tokens = policy_logits[..., 0, :]
+        
+        # Apply MLP
+        policy_logits = nn.Sequential([
+            FFNSwiGLU(),
+            FFNSwiGLU(),
+            FFNSwiGLU(out_dim=55 * 38),
+            FFNSwiGLU(hidden_dim=(55 * 38) // 2, out_dim=55 * 38),
+        ])(policy_tokens)
+        
+        # --- Value Network --- #
+        value_logits = ValueEncoder(self.config.value_head)(hidden_state)
+        
+        return policy_logits, value_logits
+    
+class PredictionNetworkV3(nn.Module):
+    """
+    Use the same encoder for policy, value, and reward
+    """
+    config: MuZeroConfig
+    
+    @nn.compact
+    def __call__(self, hidden_state):
+        # --- Policy Network --- #
+        policy_value_reward_with_hidden_state = PrependTokens(num_tokens=3)(hidden_state)
+        
+        policy_value_reward_logits = Encoder(self.config.policy_head)(policy_value_reward_with_hidden_state)
+        
+        policy_token = policy_value_reward_logits[..., 0, :]
+        value_token = policy_value_reward_logits[..., 1, :]
+        reward_token = policy_value_reward_logits[..., 2, :]
+        
+        # Policy MLP
+        policy_logits = nn.Sequential([
+            FFNSwiGLU(),
+            FFNSwiGLU(),
+            FFNSwiGLU(out_dim=55 * 38),
+            FFNSwiGLU(hidden_dim=(55 * 38) // 2, out_dim=55 * 38),
+        ])(policy_token)
+        
+        # Value MLP
+        value_logits = nn.Sequential([
+            FFNSwiGLU(),
+            FFNSwiGLU(),
+        ])(value_token)
+        
+        # Reward MLP
+        reward_logits = nn.Sequential([
+            FFNSwiGLU(),
+            FFNSwiGLU(),
+        ])(reward_token)
+        
+        return policy_logits, value_logits, reward_logits
+
+    
 class DynamicsNetwork(nn.Module):
     """
     Dynamics Network to return the next hidden state and reward
@@ -128,6 +199,42 @@ class DynamicsNetwork(nn.Module):
         reward_logits = ValueEncoder(self.config.reward_head)(next_hidden_state)
         
         return next_hidden_state, reward_logits
+    
+class DynamicsNetworkV2(nn.Module):
+    """
+    Only use a single action token and run MHSA to get the next hidden state
+    """
+    config: MuZeroConfig
+    
+    @nn.compact
+    def __call__(self, hidden_state, action):
+        action_tokens_with_hidden_state = ActionGlobalToken()(hidden_state, action)
+        
+        next_hidden_state = Encoder(self.config.dynamics_head)(action_tokens_with_hidden_state)
+        
+        # Exclude the action token
+        next_hidden_state = next_hidden_state[..., 1:, :]
+        
+        # --- Reward --- #
+        reward_logits = ValueEncoder(self.config.reward_head)(next_hidden_state)
+        
+        return next_hidden_state, reward_logits
+    
+class DynamicsNetworkV3(nn.Module):
+    """
+    Move reward to the prediction network
+    """
+    config: MuZeroConfig
+
+    @nn.compact
+    def __call__(self, hidden_state, action):
+        action_tokens_with_hidden_state = ActionGlobalToken()(hidden_state, action)
+        next_hidden_state = Encoder(self.config.dynamics_head)(action_tokens_with_hidden_state)
+        
+        # Exclude the action token
+        next_hidden_state = next_hidden_state[..., 1:, :]
+        
+        return next_hidden_state
 
 
 """
@@ -146,7 +253,7 @@ class MuZeroParams:
     prediction: nn.Module
     dynamics: nn.Module
 
-class MCTXAgent:
+class MuZeroBase:
     def __init__(self,
                  representation_nn: nn.Module,
                  prediction_nn: nn.Module,
@@ -184,10 +291,9 @@ class MCTXAgent:
             dynamics=dynamics_variables
         )
         
-        self.params = params
-        return self.params
+        return params
     
-    def policy(self, params: MuZeroParams, key: jax.random.PRNGKey, obs: BatchedObservation):
+    def policy_muzero(self, params: MuZeroParams, key: jax.random.PRNGKey, obs: BatchedObservation):
         root, original_shape = self.root_fn(params, key, obs)
         invalid_actions = obs.action_mask
         
@@ -209,7 +315,6 @@ class MCTXAgent:
         return policy_output, root
     
     def policy_gumbel(self, params: MuZeroParams, key: jax.random.PRNGKey, obs: BatchedObservation):
-
         root = self.root_fn(params, key, obs)
         invalid_actions = obs.action_mask
 
@@ -226,8 +331,26 @@ class MCTXAgent:
         )
         
         return policy_output, root
-        
     
+    def init_policy(self):
+        if self.mc.policy_type == "muzero":
+            return self.policy_muzero
+        elif self.mc.policy_type == "gumbel":
+            return self.policy_gumbel
+        else:
+            raise ValueError(f"Unknown policy type {self.mc.policy_type}")
+        
+    @partial(jax.jit, static_argnums=(0,))
+    def root_fn(self, params: MuZeroParams, key: jax.random.PRNGKey, obs: BatchedObservation) -> mctx.RootFnOutput:
+        raise NotImplementedError
+        
+    @partial(jax.jit, static_argnums=(0,))
+    def recurrent_fn(self, params: MuZeroParams, key: jax.random.PRNGKey, action, embedding) -> (mctx.RecurrentFnOutput, jnp.ndarray):
+        raise NotImplementedError
+    
+    
+    
+class MuZeroAgent(MuZeroBase):
     @partial(jax.jit, static_argnums=(0,))
     def root_fn(self, params: MuZeroParams, key: jax.random.PRNGKey, obs: BatchedObservation) -> mctx.RootFnOutput:
         del key
@@ -241,7 +364,7 @@ class MCTXAgent:
             value=value,
             embedding=hidden_state
         )
-        
+
     @partial(jax.jit, static_argnums=(0,))
     def recurrent_fn(self, params: MuZeroParams, key: jax.random.PRNGKey, action, embedding) -> (mctx.RecurrentFnOutput, jnp.ndarray):
         del key
@@ -263,15 +386,59 @@ class MCTXAgent:
 
         return recurrent_output, next_hidden_state
     
+class MuZeroAgentV2(MuZeroBase):
+    @partial(jax.jit, static_argnums=(0,))
+    def root_fn(self, params: MuZeroParams, key: jax.random.PRNGKey, obs: BatchedObservation) -> mctx.RootFnOutput:
+        del key
+
+        hidden_state = self.represnetation_nn.apply(params.represnentation, obs)
+        policy_logits, value_logits, _ = self.prediction_nn.apply(params.prediction, hidden_state)
+
+        value = self.scalar_encoder.decode_softmax(value_logits)
+        
+        return mctx.RootFnOutput(
+            prior_logits=policy_logits,
+            value=value,
+            embedding=hidden_state
+        )
+        
+    @partial(jax.jit, static_argnums=(0,))
+    def recurrent_fn(self, params: MuZeroParams, key: jax.random.PRNGKey, action, embedding) -> (mctx.RecurrentFnOutput, jnp.ndarray):
+        del key
+
+        next_hidden_state = self.dynamics_nn.apply(params.dynamics, embedding, action)
+        policy_logits, value_logits, reward_logits = self.prediction_nn.apply(params.prediction, next_hidden_state)
+
+        value = self.scalar_encoder.decode_softmax(value_logits)
+        reward = self.scalar_encoder.decode_softmax(reward_logits)
+        
+        discount = jnp.ones_like(value) * self.mc.discount
+        
+        recurrent_output = mctx.RecurrentFnOutput(
+            reward=reward,
+            discount=discount,
+            prior_logits=policy_logits,
+            value=value,
+        )
+
+        return recurrent_output, next_hidden_state
+
+    
+@chex.dataclass(frozen=True)
+class PoroXOutput:
+    action: jnp.ndarray
+    action_weights: jnp.ndarray
+    value: jnp.ndarray
+    
 class PoroXV1:
     def __init__(self, config: PoroXConfig, key: jax.random.PRNGKey, obs: BatchedObservation):
         self.config = config
         
         repr_nn = RepresentationNetwork(config.muzero)
-        pred_nn = PredictionNetwork(config.muzero)
-        dyna_nn = DynamicsNetwork(config.muzero)
+        pred_nn = PredictionNetworkV3(config.muzero)
+        dyna_nn = DynamicsNetworkV3(config.muzero)
         
-        self.muzero = MCTXAgent(
+        self.muzero = MuZeroAgentV2(
             representation_nn=repr_nn,
             prediction_nn=pred_nn,
             dynamics_nn=dyna_nn,
@@ -281,6 +448,8 @@ class PoroXV1:
         self.variables = self.muzero.init(key, obs)
         self.key = key
         
+        self._policy = self.muzero.init_policy()
+        
     # TODO: Save and load checkpoints
     def save(self):
         pass
@@ -289,9 +458,8 @@ class PoroXV1:
         
     @partial(jax.jit, static_argnums=(0,))
     def policy(self, obs: BatchedObservation):
-        return self.muzero.policy_gumbel(self.variables, self.key, obs)
+        return self._policy(self.variables, self.key, obs)
     
-    # @partial(jax.jit, static_argnums=(0,))
     def unflatten(self, policy_output, root, original_shape):
         actions = batch_utils.unflatten(policy_output.action, original_shape)
         action_weights = batch_utils.unflatten(policy_output.action_weights, original_shape)
@@ -303,7 +471,13 @@ class PoroXV1:
         if game_batched:
             obs, original_shape = batch_utils.flatten_multi_game_obs(obs)
             policy_output, root = self.policy(obs)
-            return self.unflatten(policy_output, root, original_shape)
+            actions, action_weights, values =  self.unflatten(policy_output, root, original_shape)
         else:
             policy_output, root = self.policy(obs)
-            return policy_output.action, policy_output.action_weights, root.value
+            actions, action_weights, values = policy_output.action, policy_output.action_weights, root.value
+
+        return PoroXOutput(
+            action=actions,
+            action_weights=action_weights,
+            value=values,
+        )

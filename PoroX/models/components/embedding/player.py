@@ -9,6 +9,8 @@ from PoroX.modules.observation import PlayerObservation
 from PoroX.models.components.scalar_encoder import ScalarEncoder
 from PoroX.models.components.fc import MLP, FFNSwiGLU
 
+from PoroX.models.defaults import DEFAULT_DTYPE
+
 # -- Config -- #
 @struct.dataclass
 class EmbeddingConfig:
@@ -26,6 +28,8 @@ class EmbeddingConfig:
     num_champions: int = 60
     num_items: int = 60
     num_traits: int = 27
+    
+    dtype = DEFAULT_DTYPE
         
 def vector_size(config: EmbeddingConfig):
     return (
@@ -43,29 +47,39 @@ class ChampionEmbedding(nn.Module):
 
     Champion Vector:
     0: championID
-    1-3: itemID
-    4-10: traitID
-    11-22: stats
+    1: chosen (0 or 1)
+    2: stars (0-3)
+    3: cost
+    4-6: itemID
+    7-13: traitID
+    13-24: stats
     """
     config: EmbeddingConfig
     
     @nn.compact
     def __call__(self, x):
-        ids = jnp.int16(x[..., :11])
-        stats_vector = x[..., 11:]
-        championID = ids[..., 0]
-        itemIDs = ids[..., 1:4]
-        traitIDs = ids[..., 4:11]
+        dtype = self.config.dtype
+
+        championID = x[..., 0].astype(jnp.int16)
+        chosen = x[..., 1]
+        stars = x[..., 2]
+        cost = x[..., 3]
+        itemIDs = x[..., 4:7].astype(jnp.int16)
+        traitIDs = x[..., 7:14].astype(jnp.int16)
+        stats = x[..., 14:]
         
         champion_embedding = nn.Embed(
             num_embeddings=self.config.num_champions,
-            features=self.config.champion_embedding_size)(championID)
+            features=self.config.champion_embedding_size,
+            param_dtype=dtype)(championID)
         item_embedding = nn.Embed(
             num_embeddings=self.config.num_items,
-            features=self.config.item_embedding_size)(itemIDs)
+            features=self.config.item_embedding_size,
+            param_dtype=dtype)(itemIDs)
         trait_embedding = nn.Embed(
             num_embeddings=self.config.num_traits,
-            features=self.config.trait_embedding_size)(traitIDs)
+            features=self.config.trait_embedding_size,
+            param_dtype=dtype)(traitIDs)
         
         batch_shape = item_embedding.shape[:-2]
 
@@ -78,12 +92,23 @@ class ChampionEmbedding(nn.Module):
             trait_embedding,
             newshape=(*batch_shape, self.config.trait_embedding_size * 7)
         )
+        
+        # one-hot encode chosen
+        chosen_one_hot = nn.one_hot(chosen.astype(jnp.int16), num_classes=2, dtype=dtype)
+        # one-hot encode stars
+        stars_one_hot = nn.one_hot(stars.astype(jnp.int16), num_classes=4, dtype=dtype)
+        
+        # Expand cost to match the shape of the other embeddings
+        cost = jnp.expand_dims(cost, axis=-1)
 
         return jnp.concatenate([
             champion_embedding,
             item_embedding,
             trait_embedding,
-            stats_vector
+            chosen_one_hot,
+            stars_one_hot,
+            cost,
+            stats
         ], axis=-1)
         
 # -- Item Embedding -- #
@@ -100,7 +125,8 @@ class ItemBenchEmbedding(nn.Module):
 
         bench_item_embedding = nn.Embed(
             num_embeddings=self.config.num_items,
-            features=vector_size(self.config))(ids)
+            features=vector_size(self.config),
+            param_dtype=self.config.dtype)(ids)
 
         return bench_item_embedding
 
@@ -117,7 +143,7 @@ class TraitEmbedding(nn.Module):
         return MLP(features=[
             self.config.num_traits,
             vector_size(self.config)
-            ])(x)
+            ], dtype=self.config.dtype)(x)
         
 class ScalarEmbedding(nn.Module):
     """
@@ -207,7 +233,7 @@ class ScalarEmbedding(nn.Module):
         
         # Run through FFN
         def ffn():
-            return FFNSwiGLU(out_dim=vector_size(self.config))
+            return FFNSwiGLU(out_dim=vector_size(self.config), dtype=self.config.dtype)
         
         def encode_and_concat(x):
             """Convert the scalars into vectors of the same size and concatenate"""

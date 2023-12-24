@@ -1,4 +1,5 @@
 from typing import Optional
+import jax.numpy as jnp
 from flax import struct
 
 from PoroX.models.components.embedding import (
@@ -10,8 +11,9 @@ from PoroX.models.player_encoder import PlayerConfig
 
 @struct.dataclass
 class MCTXConfig:
+    policy_type: str = "gumbel" # "muzero" or "gumbel
     discount: float = 0.997
-    num_simulations: int = 8
+    num_simulations: int = 128
     
     # Defaults from MCTX repo
     max_depth: Optional[int] = None
@@ -24,7 +26,7 @@ class MCTXConfig:
     temperature: float = 1.0
     
     # Gumbel MuZero Policy
-    max_num_considered_actions: int = 4
+    max_num_considered_actions: int = 32
     gumbel_scale: float = 1.0
 
 @struct.dataclass
@@ -79,22 +81,39 @@ muzero_config = MuZeroConfig(
         num_blocks=4,
         num_heads=4,
     ),
+    # V1 Policy Head
+    # policy_head=EncoderConfig(
+    #     num_blocks=4,
+    #     num_heads=2,
+    #     project_dim=38,
+    #     project_blocks=2,
+    # ),
+    # V2 Policy Head
+    # policy_head=EncoderConfig(
+    #     num_blocks=4,
+    #     num_heads=2,
+    # ),
+    # V3 Policy Head
     policy_head=EncoderConfig(
-        num_blocks=4,
-        num_heads=2,
-        project_dim=38,
-        project_blocks=2,
+        num_blocks=6,
+        num_heads=4,
     ),
     value_head=EncoderConfig(
         num_blocks=2,
         num_heads=2,
     ),
+    # V1 Dynamics Head
+    # dynamics_head=EncoderConfig(
+    #     num_blocks=4,
+    #     num_heads=5,
+    #     project_dim=192, # Ensure hidden state matches segment hidden state
+    #     project_blocks=2,
+    #     project_num_heads=4,
+    # ),
+    # V2 Dynamics Head
     dynamics_head=EncoderConfig(
         num_blocks=4,
-        num_heads=5,
-        project_dim=192, # Ensure hidden state matches segment hidden state
-        project_blocks=2,
-        project_num_heads=4,
+        num_heads=4,
     ),
     reward_head=EncoderConfig(
         num_blocks=2,

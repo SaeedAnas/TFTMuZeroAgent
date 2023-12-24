@@ -1,3 +1,5 @@
+import jax
+import jax.numpy as jnp
 import numpy as np
 import chex
 from Simulator.porox.observation import ObservationVector, ActionVector
@@ -18,6 +20,15 @@ class BatchedObservation:
     # Mapping to keep track of which player is which
     player_ids: chex.ArrayDevice
     player_len: chex.ArrayDevice
+    
+@jax.jit
+def to_fp16(x: PlayerObservation):
+    return PlayerObservation(
+        champions=x.champions.astype(jnp.float16),
+        scalars=x.scalars.astype(jnp.float16),
+        items=x.items.astype(jnp.float16),
+        traits=x.traits.astype(jnp.float16)
+    )
 
 
 class PoroXObservation(ObservationVector):

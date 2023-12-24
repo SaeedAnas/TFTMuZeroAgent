@@ -24,6 +24,6 @@ class ValueEncoder(nn.Module):
         value_logits = value_logits[..., 0, :]
         
         # Now optionally we could apply one final MLP to get the logits
-        value = FFNSwiGLU()(value_logits)
+        value = FFNSwiGLU(dtype=self.config.dtype)(value_logits)
         
         return value

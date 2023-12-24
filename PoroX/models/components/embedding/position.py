@@ -2,6 +2,8 @@ from typing import Optional
 import flax.linen as nn
 import jax.numpy as jnp
 
+from PoroX.models.defaults import DEFAULT_DTYPE
+
 class SinusoidalPositionalEncoding(nn.Module):
     """
     Sinusoidal Positional Encoding
@@ -14,7 +16,7 @@ class SinusoidalPositionalEncoding(nn.Module):
     min_scale: float = 1.0
     max_scale: float = 1.0e4
     
-    dtype: jnp.dtype = jnp.float32
+    dtype: jnp.dtype = DEFAULT_DTYPE
     
     def setup(self):
         
@@ -45,6 +47,7 @@ class LearnedPositionalEncoding(nn.Module):
     """
     max_len: Optional[int] = None
     embedding_size: Optional[int] = None
+    dtype: jnp.dtype = DEFAULT_DTYPE
     
     @nn.compact
     def __call__(self, x):
@@ -55,7 +58,8 @@ class LearnedPositionalEncoding(nn.Module):
 
         pe = nn.Embed(
             num_embeddings=num_elements,
-            features=features
+            features=features,
+            dtype=self.dtype
         )(pos)
         
         return x + pe

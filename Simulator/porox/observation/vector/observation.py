@@ -28,8 +28,8 @@ class ObservationVector(ObservationBase, ObservationVectorBase):
         # -- Champions -- #
         # Create ids for champions
         self.stat_vector_length = 12
-        # 2 for chosen, 4 for stars, 1 for cost
-        self.other_stat_vector_length = 2 + 4 + 1
+        # 1 for chosen, 1 for stars, 1 for cost
+        self.other_stat_vector_length = 3
 
         # championID, items, origins, stats
         self.champion_vector_length = 1 + self.item_vector_length * 3 \
@@ -299,6 +299,10 @@ class ObservationVector(ObservationBase, ObservationVectorBase):
         Champion Vector:
 
         championID: int
+        
+        stats: [
+            chosen, stars, cost
+        ]
 
         items: (shape: 3) [
             itemID, itemID, itemID
@@ -310,11 +314,7 @@ class ObservationVector(ObservationBase, ObservationVectorBase):
             traitID # 1 possible trait from chosen
         ]
         
-        other stats: [
-            chosen, stars, cost
-        ]
-        
-        stats: (shape: 12) [
+        battle stats: (shape: 12) [
             AD, crit_chance, crit_damage, armor, MR, dodge, health, mana, AS, SP, maxmana, range
         ]
         """
@@ -357,18 +357,16 @@ class ObservationVector(ObservationBase, ObservationVectorBase):
                 stats[stat] += value
                 
         # -- Other Stats -- #
-        chosen = self.util.chosen_one_hot(champion.chosen)
-        stars = self.util.stars_one_hot(champion.stars)
+        chosen = self.util.get_chosen(champion.chosen)
+        stars = self.util.get_stars(champion.stars)
         cost = self.util.get_champion_cost(champion)
         
         # Create vectors
         return np.concatenate([
             np.array([championID]),
+            np.array([chosen, stars, cost]),
             item_ids,
             origin_ids,
-            chosen,
-            stars,
-            np.array([cost]),
             np.array(list(stats.values()))
         ])
         

@@ -1,8 +1,10 @@
 from typing import Optional
+import jax.numpy as jnp
 from flax import linen as nn
 from flax import struct
 
 from PoroX.models.components.fc import FFNSwiGLU
+from PoroX.models.defaults import DEFAULT_DTYPE
 
 @struct.dataclass
 class EncoderConfig:
@@ -22,6 +24,8 @@ class EncoderConfig:
     qkv_features: Optional[int] = None
     # Hidden dimension of the FFN
     hidden_dim: Optional[int] = None
+    
+    dtype: jnp.dtype = DEFAULT_DTYPE
 
 # Transformer Encoder
 class EncoderBlock(nn.Module):
@@ -38,17 +42,20 @@ class EncoderBlock(nn.Module):
     qkv_features: Optional[int] = None
     hidden_dim: Optional[int] = None
     
+    dtype: jnp.dtype = DEFAULT_DTYPE
+    
     @nn.compact
     def __call__(self, x):
-        y = nn.RMSNorm()(x)
+        y = nn.RMSNorm(dtype=self.dtype)(x)
         y = nn.MultiHeadDotProductAttention(
             num_heads=self.num_heads,
             qkv_features=self.qkv_features,
             kernel_init=nn.initializers.xavier_uniform(),
+            dtype=self.dtype
         )(y)
         x = x + y
         
-        y = nn.RMSNorm()(x)
+        y = nn.RMSNorm(dtype=self.dtype)(x)
         y = FFNSwiGLU(
             hidden_dim=self.hidden_dim,
         )(y)
@@ -58,11 +65,13 @@ class EncoderBlock(nn.Module):
     
 class ProjectionBlock(nn.Module):
     out_dim: int
+    dtype: jnp.dtype = DEFAULT_DTYPE
     
     @nn.compact
     def __call__(self, x):
         x = FFNSwiGLU(
-            out_dim=self.out_dim
+            out_dim=self.out_dim,
+            dtype=self.dtype
         )(x)
 
         return x
@@ -85,10 +94,11 @@ class Encoder(nn.Module):
                 x = EncoderBlock(
                     num_heads=self.config.num_heads,
                     qkv_features=self.config.qkv_features,
-                    hidden_dim=self.config.hidden_dim
+                    hidden_dim=self.config.hidden_dim,
+                    dtype=self.config.dtype
                 )(x)
 
-            x = nn.RMSNorm()(x)
+            x = nn.RMSNorm(dtype=self.config.dtype)(x)
             
             return x
         
@@ -101,21 +111,24 @@ class Encoder(nn.Module):
                 x = EncoderBlock(
                     num_heads=self.config.num_heads,
                     qkv_features=self.config.qkv_features,
-                    hidden_dim=self.config.hidden_dim
+                    hidden_dim=self.config.hidden_dim,
+                    dtype=self.config.dtype
                 )(x)
                 
             x = ProjectionBlock(
-                out_dim=self.config.project_dim
+                out_dim=self.config.project_dim,
+                dtype=self.config.dtype
             )(x)
             
             for layer in range(self.config.project_blocks):
                 x = EncoderBlock(
                     num_heads=proj_num_heads,
                     qkv_features=self.config.qkv_features,
-                    hidden_dim=self.config.hidden_dim
+                    hidden_dim=self.config.hidden_dim,
+                    dtype=self.config.dtype
                 )(x)
                 
-            x = nn.RMSNorm()(x)
+            x = nn.RMSNorm(dtype=self.config.dtype)(x)
 
             return x
     
@@ -136,14 +149,16 @@ class CrossAttentionBlock(nn.Module):
             num_heads=self.config.num_heads,
             qkv_features=self.config.qkv_features,
             kernel_init=nn.initializers.xavier_uniform(),
+            dtype=self.config.dtype
         )(x, inputs_k=context, inputs_v=context)
-        y = nn.RMSNorm()(y)
+        y = nn.RMSNorm(dtype=self.config.dtype)(y)
         x = x + y
         
         y = FFNSwiGLU(
-            hidden_dim=self.config.hidden_dim
+            hidden_dim=self.config.hidden_dim,
+            dtype=self.config.dtype
         )(x)
-        y = nn.RMSNorm()(y)
+        y = nn.RMSNorm(dtype=self.config.dtype)(y)
         x = x + y
 
         return x
@@ -159,6 +174,6 @@ class CrossAttentionEncoder(nn.Module):
         for layer in range(self.config.num_blocks):
             x = CrossAttentionBlock(self.config)(x, context)
         
-        x = nn.RMSNorm()(x)
+        x = nn.RMSNorm(dtype=self.config.dtype)(x)
         
         return x

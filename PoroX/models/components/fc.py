@@ -1,5 +1,7 @@
+import jax.numpy as jnp
 from typing import Sequence, Callable, Optional
 from flax import linen as nn
+from PoroX.models.defaults import DEFAULT_DTYPE
 
 """
 The fc module is a collection of useful components for fully connected networks
@@ -8,11 +10,13 @@ The fc module is a collection of useful components for fully connected networks
 class MLP(nn.Module):
     features: Sequence[int]
     act: Callable = nn.gelu
+    dtype: jnp.dtype = DEFAULT_DTYPE
     
     def setup(self):
         layers = []
         for i, size in enumerate(self.features):
-            layers.append(nn.Dense(size))
+            layers.append(nn.Dense(size, dtype=self.dtype))
+
             if i != len(self.features) - 1:
                 layers.append(self.act)
 
@@ -30,6 +34,7 @@ class FFNSwiGLU(nn.Module):
     """
     hidden_dim: Optional[int] = None
     out_dim: Optional[int] = None
+    dtype: jnp.dtype = DEFAULT_DTYPE
     
     @nn.compact
     def __call__(self, x):
@@ -39,7 +44,7 @@ class FFNSwiGLU(nn.Module):
         out_dim = self.out_dim or input_dim
 
         def dense_fn(dim):
-            return nn.DenseGeneral(features=dim, use_bias=False)
+            return nn.DenseGeneral(features=dim, use_bias=False, dtype=self.dtype)
         
         w1 = dense_fn(hidden_dim)(x)
         w1 = nn.silu(w1)

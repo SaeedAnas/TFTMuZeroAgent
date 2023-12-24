@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-from PoroX.modules.observation import BatchedObservation, PlayerObservation
+from PoroX.modules.observation import BatchedObservation, PlayerObservation, to_fp16
 
 @jax.jit
 def flatten(x):
@@ -75,13 +75,15 @@ def collect_obs(obs: dict):
     action_mask = invert_and_flatten_action_mask(action_mask)
 
     return BatchedObservation(
-        players=players,
+        players=to_fp16(players),
         action_mask=action_mask,
-        opponents=opponents,
+        opponents=to_fp16(opponents),
 
-        player_ids=jnp.array(player_ids).astype(jnp.int32),
-        player_len=jnp.array(len(values)).astype(jnp.int32)
+        player_ids=jnp.array(player_ids).astype(jnp.int8),
+        player_len=jnp.array(len(values)).astype(jnp.int8)
     )
+    
+
 
 def create_padded_player(players: PlayerObservation):
     """

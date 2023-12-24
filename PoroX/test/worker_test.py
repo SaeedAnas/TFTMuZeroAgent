@@ -1,85 +1,37 @@
+import ray
+import jax
 import time
 
 from Simulator.porox.tft_simulator import parallel_env, TFTConfig
 
-from PoroX.modules.observation import PoroXObservation
-from PoroX.models.mctx_agent import PoroXV1
-from PoroX.models.config import porox_config
 import PoroX.modules.batch_utils as batch_utils
+from PoroX.modules.worker import collect_gameplay_experience, collect_gameplay_experience_ray
+from PoroX.modules.observation import PoroXObservation
 
-def test_worker(env, key):
-    obs, infos = env.reset()
-    
-    batched_obs = batch_utils.collect_obs(obs)
-    agent = PoroXV1(porox_config, key, batched_obs)
-    
-    terminated = {agent: False for agent in env.agents}
-    truncated  = {agent: False for agent in env.agents}
-    
-    while not all(terminated.values()):
-        start = time.time()
-        batched_obs = batch_utils.collect_obs(obs)
-        actions, policy, values = agent.act(batched_obs)
-        
-        step_actions = batch_utils.map_actions(
-            actions,
-            batched_obs.player_ids,
-            batched_obs.player_len
-        )
-        
-        obs, rewards, terminated, truncated, infos = env.step(step_actions)
-        print(f"Step time: {time.time() - start}")
+from PoroX.models.mctx_agent import PoroXV1
+from PoroX.models.config import muzero_config, PoroXConfig, MCTXConfig
 
-def test_batched_workers(key):
+def test_batched_workers(key, first_obs):
     N = 5
-    config = TFTConfig(observation_class=PoroXObservation)
+    batched_obs = batch_utils.collect_obs(first_obs)
     
-    envs = [
-        parallel_env(config)
-        for _ in range(N)
-    ]
-    
-    obs = []
-    infos = []
-    terminated = []
-    truncated = []
-    
-    for env in envs:
-        o, i = env.reset()
-        obs.append(o)
-        infos.append(i)
-        terminated.append({agent: False for agent in env.agents})
-        truncated.append({agent: False for agent in env.agents})
-        
-    batched_obs = batch_utils.collect_multi_game_obs(obs)
-    agent = PoroXV1(porox_config, key, batched_obs)
-        
-    def all_games_terminated():
-        return all([
-            all(t.values())
-            for t in terminated
-        ])
-        
-    while not all_games_terminated():
-        start = time.time()
-        batched_obs = batch_utils.collect_multi_game_obs(obs)
-        actions, policy, values = agent.act(batched_obs, game_batched=True)
-    
-        step_actions = batch_utils.batch_map_actions(
-            actions,
-            batched_obs
+    config = PoroXConfig(
+        muzero=muzero_config,
+        mctx=MCTXConfig(
+            policy_type="gumbel",
+            num_simulations=4,
+            max_num_considered_actions=2,
         )
-        
-        obs = []
-        infos = []
-        terminated = []
-        truncated = []
-        
-        for env, actions in zip(envs, step_actions):
-            o, r, t, tr, i = env.step(actions)
-            obs.append(o)
-            infos.append(i)
-            terminated.append(t)
-            truncated.append(tr)
-            
-        print(f"Step time: {time.time() - start}")
+    )
+
+    # Initialize PoroXV1
+    start_init = time.time()
+    agent = PoroXV1(config, key, batched_obs)
+    print(f"Initialization time: {time.time() - start_init}")
+    
+    collect_gameplay_experience(agent, num_games=N)
+    
+def test_random_workers(test_agent):
+    N = 5
+    collect_gameplay_experience_ray(test_agent, num_games=N)
+    print('here')

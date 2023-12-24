@@ -7,6 +7,8 @@ import jax.numpy as jnp
 from functools import partial
 
 from PoroX.models.components.fc import MLP, FFNSwiGLU
+from PoroX.models.defaults import DEFAULT_DTYPE
+
 
 # -- Config -- #
     
@@ -16,6 +18,8 @@ class SegmentConfig:
     num_elements: Optional[int] = None
     out_dim: Optional[int] = None
     hidden_dim: Optional[int] = None
+    
+    dtype = DEFAULT_DTYPE
 
 # -- Encoding -- #
 # def expand_segments(num_elements, segments):
@@ -65,7 +69,8 @@ class SegmentEncoding(nn.Module):
 
         segment_encoding = nn.Embed(
             num_embeddings=num_segments,
-            features=out_dim)(self.config.segments)
+            features=out_dim,
+            dtype=self.config.dtype)(self.config.segments)
         
         return x + segment_encoding
     
@@ -85,7 +90,7 @@ class GlobalPlayerSegmentFFN(nn.Module):
         scalars = x[..., 53:, :]
         
         def ffn(hidden_dim=self.config.hidden_dim, out_dim=self.config.out_dim):
-            return FFNSwiGLU(hidden_dim, out_dim)
+            return FFNSwiGLU(hidden_dim, out_dim, dtype=self.config.dtype)
 
         board_fc    = ffn()(board)
         bench_fc    = ffn()(bench)
