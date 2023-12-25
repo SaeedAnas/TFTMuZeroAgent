@@ -18,7 +18,7 @@ class EmbeddingConfig:
     champion_embedding_size: int = 30
     item_embedding_size: int = 10
     trait_embedding_size: int = 8
-    stats_size: int = 19
+    stats_size: int = 12 + 2 + 4 + 15
     
     # Scalar Config
     scalar_min_value: int = 0
@@ -98,16 +98,23 @@ class ChampionEmbedding(nn.Module):
         # one-hot encode stars
         stars_one_hot = nn.one_hot(stars.astype(jnp.int16), num_classes=4, dtype=dtype)
         
+        # one-hot encode cost
+        # Actual would be 5 * 9 but i'll be damned if an agent ever gets to a 3 star 5 cost
+        # Just use 2 star 5 cost as the max
+        cost_one_hot = nn.one_hot(cost.astype(jnp.int16), num_classes=15, dtype=dtype)
+
         # Expand cost to match the shape of the other embeddings
         cost = jnp.expand_dims(cost, axis=-1)
-
+        
+        stats = stats.astype(dtype)
+        
         return jnp.concatenate([
             champion_embedding,
             item_embedding,
             trait_embedding,
             chosen_one_hot,
             stars_one_hot,
-            cost,
+            cost_one_hot,
             stats
         ], axis=-1)
         
@@ -269,7 +276,7 @@ class PlayerEmbedding(nn.Module):
     @nn.compact
     def __call__(self, x: PlayerObservation):
         champion_embeddings = ChampionEmbedding(self.config)(x.champions)
-
+        
         item_bench_embeddings = ItemBenchEmbedding(self.config)(x.items)
 
         trait_embeddings = TraitEmbedding(self.config)(x.traits)

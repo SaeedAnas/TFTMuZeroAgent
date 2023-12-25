@@ -360,7 +360,7 @@ class ObservationVector(ObservationBase, ObservationVectorBase):
         chosen = self.util.get_chosen(champion.chosen)
         stars = self.util.get_stars(champion.stars)
         cost = self.util.get_champion_cost(champion)
-        
+
         # Create vectors
         return np.concatenate([
             np.array([championID]),
@@ -418,15 +418,9 @@ class ObservationVector(ObservationBase, ObservationVectorBase):
         return stat_modifiers
         
     def apply_champion_normalization(self, champion_vectors):
-        """Apply normalization to a champion vector
-        
-        0: ID
-        1-3: itemIDs
-        4-10: originIDs
-        11-22: stats
-        """
-        champion_vectors[:, 11:23] = \
-            self.normalizer.apply_champion_normalization(champion_vectors[:, 11:23])
+        """Apply normalization to a champion vector"""
+        champion_vectors[:, 14:] = \
+            self.normalizer.apply_champion_normalization(champion_vectors[:, 14:])
             
         return champion_vectors
 

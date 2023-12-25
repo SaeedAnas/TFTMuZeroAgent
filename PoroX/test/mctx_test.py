@@ -41,6 +41,8 @@ def test_gumbel_muzero_network(first_obs, key):
         muzero=muzero_config,
         mctx=MCTXConfig(
             policy_type="gumbel",
+            num_simulations=8,
+            max_num_considered_actions=4,            
         )
     )
     

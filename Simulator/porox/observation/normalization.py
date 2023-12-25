@@ -15,7 +15,8 @@ def calculate_residuals(stats):
     residuals = {}
     for stat, value in stats.items():
         mu = np.mean(value)
-        sigma = np.std(value) + 1e-9 # Just to ensure no zeros
+        sigma = np.std(value)
+        sigma = sigma if sigma != 0 else 1 # Prevent division by zero
         residuals[stat] = (mu, sigma)
 
     return residuals

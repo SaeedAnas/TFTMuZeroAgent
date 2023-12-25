@@ -1,3 +1,3 @@
 import jax.numpy as jnp
 
-DEFAULT_DTYPE = jnp.float32
+DEFAULT_DTYPE = jnp.float16
