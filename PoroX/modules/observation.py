@@ -18,9 +18,42 @@ class BatchedObservation:
     opponents: PlayerObservation
     
 @chex.dataclass(frozen=True)
-class BatchedMapping:
+class ObservationMapping:
     player_ids: chex.ArrayDevice
     player_len: chex.ArrayDevice
+    
+def compress_observation(observation: BatchedObservation):
+    
+    def compress_player(player: PlayerObservation):
+        """
+        Compress player
+        We can compute the stats later.
+        """
+
+        # Compress champions by removing stats and all traits except chosen
+        champions = player.champions[..., :7].astype(jnp.int8)
+        scalars = player.scalars.astype(jnp.int8)
+        items = player.items.astype(jnp.int8)
+        traits = player.traits.astype(jnp.int8)
+        
+        return PlayerObservation(
+            champions=champions,
+            scalars=scalars,
+            items=items,
+            traits=traits
+        )
+        
+    def compress_action_mask(action_mask):
+        """
+        Compress action mask
+        """
+        return action_mask.astype(jnp.int8)
+    
+    return BatchedObservation(
+        players=compress_player(observation.players),
+        action_mask=compress_action_mask(observation.action_mask),
+        opponents=compress_player(observation.opponents),
+    )
 
 class PoroXObservation(ObservationVector):
     def __init__(self, player):
@@ -97,22 +130,3 @@ class PoroXObservation(ObservationVector):
             items=self.item_bench_zeros,
             traits=self.trait_zeros
         )
-        
-class PoroXAction(ActionVector):
-    def fetch_action_mask(self):
-        """
-        The ActionVector action mask gives valid actions 1 and invalid actions 0.
-        MCTX on the other hand excpects valid actions to be 0 and invalid actions to be 1.
-        
-        So we need to flip the mask.
-        """
-        mask = super().fetch_action_mask()
-        mask = 1 - mask
-        
-        # Flatten mask on last two dimensions
-        # action_shape = mask.shape
-        # mask_flattened = np.reshape(mask, action_shape[:-2] + (-1,))
-        
-        # I flatten just so its easier to apply the mask with mctx
-        
-        return mask

@@ -9,7 +9,7 @@ from PoroX.models.components.embedding.dynamics import action_space_to_action
 from PoroX.models.config import muzero_config, mctx_config, PoroXConfig, MCTXConfig
 
 import PoroX.modules.batch_utils as batch_utils
-from PoroX.modules.replay_buffer import create_trajectories, LocalBuffer
+from PoroX.modules.replay_buffer import create_trajectories, LocalBuffer, trajectory_analytics
 from PoroX.test.utils import profile
 
 def test_store_trajectories(first_obs, key):
@@ -22,8 +22,8 @@ def test_store_trajectories(first_obs, key):
         muzero=muzero_config,
         mctx=MCTXConfig(
             policy_type="gumbel",
-            num_simulations=8,
-            max_num_considered_actions=4,
+            num_simulations=2,
+            max_num_considered_actions=1,
         )
     )
     
@@ -31,13 +31,14 @@ def test_store_trajectories(first_obs, key):
     output = agent.act(batched_obs)
     # Dummy reward
     reward = jnp.zeros_like(output.value, dtype=jnp.float16)
-    trajectories = create_trajectories(output, first_obs, reward, batched_obs.player_ids)
+    trajectories = create_trajectories(output, first_obs, reward, mapping)
     
-    N = 10
-    for _ in range(N):
-        local_buffer.store_batch_trajectories(trajectories)
+    N = 5000
+    profile(N, local_buffer.store_batch_trajectories, trajectories)
     
     # Test collection 
     collected = local_buffer.collect_trajectories(unroll_steps=6)
     
-    print(collected)
+    for id, trajectory in collected.items():
+        print(f"player_{id} trajectory analytics: ")
+        trajectory_analytics(trajectory)

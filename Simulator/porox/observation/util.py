@@ -149,8 +149,5 @@ class Util:
     def stars_one_hot(self, stars) -> np.ndarray:
         return self.stars_table[stars - 1]
     
-    def get_chosen(self, chosen):
-        return 1 if chosen else 0
-    
     def get_stars(self, stars):
         return stars - 1

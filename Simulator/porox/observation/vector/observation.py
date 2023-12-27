@@ -28,8 +28,8 @@ class ObservationVector(ObservationBase, ObservationVectorBase):
         # -- Champions -- #
         # Create ids for champions
         self.stat_vector_length = 12
-        # 1 for chosen, 1 for stars, 1 for cost
-        self.other_stat_vector_length = 3
+        # 1 for stars, 1 for cost
+        self.other_stat_vector_length = 2
 
         # championID, items, origins, stats
         self.champion_vector_length = 1 + self.item_vector_length * 3 \
@@ -343,12 +343,17 @@ class ObservationVector(ObservationBase, ObservationVectorBase):
                 origins.append(item_trait)
                 
         # -- Origins -- #
+        # We prepend chosen first because this is the only trait
+        # that cannot be calculated from the observation
+        # when storing the observation, we exclude all traits and stats
+        # excluding chosen.
         if champion.chosen:
-            origins.append(champion.chosen)
+            traitID = self.util.get_trait_id(champion.chosen)
+            origin_ids[0] = traitID
             
         for i, origin in enumerate(origins):
             traitID = self.util.get_trait_id(origin)
-            origin_ids[i] = traitID
+            origin_ids[i+1] = traitID
             
         # -- Stats -- #
         # Apply item modifiers
@@ -357,14 +362,13 @@ class ObservationVector(ObservationBase, ObservationVectorBase):
                 stats[stat] += value
                 
         # -- Other Stats -- #
-        chosen = self.util.get_chosen(champion.chosen)
         stars = self.util.get_stars(champion.stars)
         cost = self.util.get_champion_cost(champion)
 
         # Create vectors
         return np.concatenate([
             np.array([championID]),
-            np.array([chosen, stars, cost]),
+            np.array([stars, cost]),
             item_ids,
             origin_ids,
             np.array(list(stats.values()))
@@ -419,8 +423,8 @@ class ObservationVector(ObservationBase, ObservationVectorBase):
         
     def apply_champion_normalization(self, champion_vectors):
         """Apply normalization to a champion vector"""
-        champion_vectors[:, 14:] = \
-            self.normalizer.apply_champion_normalization(champion_vectors[:, 14:])
+        champion_vectors[:, 13:] = \
+            self.normalizer.apply_champion_normalization(champion_vectors[:, 13:])
             
         return champion_vectors
 

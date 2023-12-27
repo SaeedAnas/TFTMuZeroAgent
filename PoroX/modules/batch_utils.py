@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-from PoroX.modules.observation import BatchedObservation, PlayerObservation, BatchedMapping
+from PoroX.modules.observation import BatchedObservation, PlayerObservation, ObservationMapping
 
 @jax.jit
 def flatten(x):
@@ -37,9 +37,6 @@ def collect(collection):
 @jax.jit
 def concat(collection, axis=0):
     return jax.tree_map(lambda *xs: jnp.concatenate(xs, axis=axis), *collection)
-
-def index_collection(collection, index):
-    return jax.tree_map(lambda x: x[index], collection)
 
 def map_collection(collection, fn):
     return jax.tree_map(fn, collection)
@@ -100,7 +97,7 @@ def collect_obs(obs: dict):
     )
     
     player_ids = players.scalars[:, 0]
-    mapping = BatchedMapping(
+    mapping = ObservationMapping(
         player_ids=jnp.array(player_ids).astype(jnp.int8),
         player_len=jnp.array(len(values)).astype(jnp.int8)
     )
@@ -128,13 +125,11 @@ def collect_list_obs(obs: dict):
         for player_obs in values
     ]
     
-    mapping = [
-        BatchedMapping(
-            player_ids=jnp.array(player_obs["player"].scalars[0]).astype(jnp.int8),
-            player_len=jnp.array(1).astype(jnp.int8)
-        )
-        for player_obs in values
-    ]
+    mapping = {
+        # player_id : idx
+        int(player_obs["player"].scalars[0]) : idx
+        for idx, player_obs in enumerate(values)
+    }
     
     return batched_obs, mapping
 
@@ -180,7 +175,7 @@ def flatten_obs(obs):
         lambda x: flatten(x)
     ), original_shape
     
-def batch_map_actions(actions: jnp.ndarray, mapping: list[BatchedMapping]):
+def batch_map_actions(actions: jnp.ndarray, mapping: list[ObservationMapping]):
     """
     Actions are in shape (Game, Player, Action)
     
@@ -194,19 +189,16 @@ def batch_map_actions(actions: jnp.ndarray, mapping: list[BatchedMapping]):
     obs contains a mapping that links each action to a player_id
     """
     
-    action_dicts = []
-    
-    for i in range(len(actions)):
-        action_dict = map_actions(
+    return [
+        map_actions(
             actions[i],
             mapping[i],
         )
         
-        action_dicts.append(action_dict)
-        
-    return action_dicts
+        for i in range(len(actions))
+    ]
     
-def map_actions(actions: jnp.ndarray, mapping: BatchedMapping):
+def map_actions(actions: jnp.ndarray, mapping: ObservationMapping):
     actions = actions[:mapping.player_len]
     player_ids = mapping.player_ids[:mapping.player_len]
     

@@ -18,7 +18,7 @@ class EmbeddingConfig:
     champion_embedding_size: int = 30
     item_embedding_size: int = 10
     trait_embedding_size: int = 8
-    stats_size: int = 12 + 2 + 4 + 15
+    stats_size: int = 12 + 4 + 15
     
     # Scalar Config
     scalar_min_value: int = 0
@@ -61,12 +61,11 @@ class ChampionEmbedding(nn.Module):
         dtype = self.config.dtype
 
         championID = x[..., 0].astype(jnp.int16)
-        chosen = x[..., 1]
-        stars = x[..., 2]
-        cost = x[..., 3]
-        itemIDs = x[..., 4:7].astype(jnp.int16)
-        traitIDs = x[..., 7:14].astype(jnp.int16)
-        stats = x[..., 14:]
+        stars = x[..., 1]
+        cost = x[..., 2]
+        itemIDs = x[..., 3:6].astype(jnp.int16)
+        traitIDs = x[..., 6:13].astype(jnp.int16)
+        stats = x[..., 13:]
         
         champion_embedding = nn.Embed(
             num_embeddings=self.config.num_champions,
@@ -93,8 +92,6 @@ class ChampionEmbedding(nn.Module):
             newshape=(*batch_shape, self.config.trait_embedding_size * 7)
         )
         
-        # one-hot encode chosen
-        chosen_one_hot = nn.one_hot(chosen.astype(jnp.int16), num_classes=2, dtype=dtype)
         # one-hot encode stars
         stars_one_hot = nn.one_hot(stars.astype(jnp.int16), num_classes=4, dtype=dtype)
         
@@ -112,7 +109,6 @@ class ChampionEmbedding(nn.Module):
             champion_embedding,
             item_embedding,
             trait_embedding,
-            chosen_one_hot,
             stars_one_hot,
             cost_one_hot,
             stats

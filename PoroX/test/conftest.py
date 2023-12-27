@@ -4,7 +4,7 @@ import random
 
 from Simulator.porox.tft_simulator import parallel_env, TFTConfig
 
-from PoroX.modules.observation import PoroXObservation, PoroXAction
+from PoroX.modules.observation import PoroXObservation
 
 from Simulator.porox.player import Player
 from Simulator import pool
