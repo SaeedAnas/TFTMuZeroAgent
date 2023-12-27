@@ -13,7 +13,7 @@ from PoroX.models.config import muzero_config, PoroXConfig, MCTXConfig
 
 def test_batched_workers(key, first_obs):
     N = 5
-    batched_obs = batch_utils.collect_obs(first_obs)
+    batched_obs, _ = batch_utils.collect_obs(first_obs)
     
     config = PoroXConfig(
         muzero=muzero_config,

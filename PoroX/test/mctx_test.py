@@ -13,7 +13,7 @@ from PoroX.test.utils import profile
 
 @pytest.mark.skip(reason="Too long")
 def test_muzero_network(first_obs, key):
-    obs = batch_utils.collect_obs(first_obs)
+    obs, _ = batch_utils.collect_obs(first_obs)
     
     config = PoroXConfig(
         muzero=muzero_config,
@@ -35,7 +35,7 @@ def test_muzero_network(first_obs, key):
     profile(N, apply, obs)
     
 def test_gumbel_muzero_network(first_obs, key):
-    obs = batch_utils.collect_obs(first_obs)
+    obs, mapping = batch_utils.collect_obs(first_obs)
     
     config = PoroXConfig(
         muzero=muzero_config,
@@ -55,13 +55,18 @@ def test_gumbel_muzero_network(first_obs, key):
     
     output = apply(obs)
     print(output.action)
+    step_actions = batch_utils.map_actions(
+        output.action,
+        mapping
+    )
+    print(step_actions)
 
     N=5
     print(f"Profiling 1 game, {mctx_config.num_simulations} simulations, {mctx_config.max_num_considered_actions} sampled actions.")
     profile(N, apply, obs)
     
 def test_batched_gumbel_muzero_network(first_batched_obs, key):
-    obs = batch_utils.collect_multi_game_obs(first_batched_obs)
+    obs, mapping = batch_utils.collect_multi_game_obs(first_batched_obs)
 
     config = PoroXConfig(
         muzero=muzero_config,
@@ -72,12 +77,16 @@ def test_batched_gumbel_muzero_network(first_batched_obs, key):
     
     agent = PoroXV1(config, key, obs)
 
-    @jax.jit
     def apply(obs):
         return agent.act(obs, game_batched=True)
     
     output = apply(obs)
     print(output.action)
+    step_actions = batch_utils.batch_map_actions(
+        output.action,
+        mapping
+    )
+    print(step_actions)
 
     N=3
     print(f"Profiling {output.action.shape[0]} batched games, {mctx_config.num_simulations} simulations, {mctx_config.max_num_considered_actions} sampled actions.")

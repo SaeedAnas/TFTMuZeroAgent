@@ -1,20 +1,19 @@
 import jax
 import jax.numpy as jnp
-from PoroX.modules.observation import BatchedObservation, PlayerObservation
+from PoroX.modules.observation import BatchedObservation, PlayerObservation, BatchedMapping
 
 @jax.jit
 def flatten(x):
     """
     x will be given as (Game, Player, ...)
     We want to flatten to (Game * Player, ...)
-    Return flattened_x and the original shape
+    Return flattened_x
     """
     
-    original_shape = x.shape
     flattened_shape = (x.shape[0] * x.shape[1],) + x.shape[2:]
     flattened_x = jnp.reshape(x, flattened_shape) 
     
-    return flattened_x, original_shape
+    return flattened_x
 
 def unflatten(x, original_shape):
     """
@@ -39,7 +38,35 @@ def collect(collection):
 def concat(collection, axis=0):
     return jax.tree_map(lambda *xs: jnp.concatenate(xs, axis=axis), *collection)
 
-@jax.jit
+def index_collection(collection, index):
+    return jax.tree_map(lambda x: x[index], collection)
+
+def map_collection(collection, fn):
+    return jax.tree_map(fn, collection)
+
+def pad_array(array, max_length=8, axis=0):
+    """
+    Pad observation arrays to a max_length.
+    For example: 
+    if array is of shape (7, 42, 30) and max_length is 8,
+    then return array of shape (8, 42, 30)
+    """
+    pad_length = max_length - array.shape[axis]
+    padded_array = jnp.pad(array, [(0, pad_length)] + [(0, 0)] * (array.ndim - 1))
+    
+    return padded_array
+
+def pad_collection(collection, max_length):
+    """
+    Pad a collection of arrays to a max_length.
+    Every item in the collection must be an array.
+    """
+
+    return map_collection(
+        collection,
+        lambda x: pad_array(x, max_length=max_length)
+    )
+
 def collect_obs(obs: dict):
     # Ensure same order
     values = list(obs.values())
@@ -62,65 +89,54 @@ def collect_obs(obs: dict):
     players = collect(players)
     action_mask = collect(action_mask)
     opponents = collect(opponents)
-    
-    player_ids = players.scalars[:, 0]
-    
-    # Pad to have 8 players
-    players = create_padded_player(players)
-    action_mask = pad_array(action_mask)
-    opponents = create_padded_player(opponents)
-    player_ids = pad_array(player_ids)
-    
+
     # Make action mask compatible with mctx
     action_mask = invert_and_flatten_action_mask(action_mask)
-
-    return BatchedObservation(
+    
+    batched_obs = BatchedObservation(
         players=players,
         action_mask=action_mask,
         opponents=opponents,
-
+    )
+    
+    player_ids = players.scalars[:, 0]
+    mapping = BatchedMapping(
         player_ids=jnp.array(player_ids).astype(jnp.int8),
         player_len=jnp.array(len(values)).astype(jnp.int8)
     )
     
-
-
-def create_padded_player(players: PlayerObservation):
-    """
-    Creates a padded observation for a single game.
-    """
-    # Pad Champions
-    champions = pad_array(players.champions)
-    
-    # Pad Items
-    items = pad_array(players.items)
-    
-    # Pad Traits
-    traits = pad_array(players.traits)
-    
-    # Pad Scalars
-    scalars = pad_array(players.scalars)
-    
-    return PlayerObservation(
-        champions=champions,
-        items=items,
-        traits=traits,
-        scalars=scalars
+    padded_obs = map_collection(
+        batched_obs,
+        lambda x: pad_array(x, max_length=8)
     )
     
-@jax.jit
-def pad_array(array, max_length=8, axis=0):
+    return padded_obs, mapping
+
+def collect_list_obs(obs: dict):
     """
-    Pad observation arrays to a max_length.
-    For example: 
-    if array is of shape (7, 42, 30) and max_length is 8,
-    then return array of shape (8, 42, 30)
+    Return obs as a list of BatchedObservations.
     """
+    values = list(obs.values())
+
+    batched_obs = [
+        BatchedObservation(
+            players=player_obs["player"],
+            action_mask=player_obs["action_mask"],
+            opponents=collect(player_obs["opponents"]),
+        )
+        
+        for player_obs in values
+    ]
     
-    pad_length = max_length - array.shape[axis]
-    padded_array = jnp.pad(array, [(0, pad_length)] + [(0, 0)] * (array.ndim - 1))
+    mapping = [
+        BatchedMapping(
+            player_ids=jnp.array(player_obs["player"].scalars[0]).astype(jnp.int8),
+            player_len=jnp.array(1).astype(jnp.int8)
+        )
+        for player_obs in values
+    ]
     
-    return padded_array
+    return batched_obs, mapping
 
 @jax.jit
 def invert_and_flatten_action_mask(action_mask):
@@ -136,57 +152,35 @@ def invert_and_flatten_action_mask(action_mask):
     return inverted_mask
 
     
-@jax.jit
 def collect_multi_game_obs(obs):
     """
     Collect a batched_obs for multiple games.
     """
     
-    batched_obs = [
-        collect_obs(game_obs)
-        for game_obs in obs
-    ]
-
-    return collect(batched_obs)
+    batched_obs = []
+    batched_mapping = []
+    
+    for game_obs in obs:
+        game_obs, mapping = collect_obs(game_obs)
+        batched_obs.append(game_obs)
+        batched_mapping.append(mapping)
+        
+    return collect(batched_obs), batched_mapping
 
 @jax.jit
-def flatten_multi_game_obs(obs):
+def flatten_obs(obs):
     """
     Flatten a batched_obs for multiple games and return the original shape.
     """
     
-    players, original_shape = flatten_player_obs(obs.players)
-    action_mask, _ = flatten(obs.action_mask)
-    opponents, _ = flatten_player_obs(obs.opponents)
+    original_shape = obs.players.champions.shape
     
-    return BatchedObservation(
-        players=players,
-        action_mask=action_mask,
-        opponents=opponents,
-        
-        player_ids=obs.player_ids,
-        player_len=obs.player_len
+    return map_collection(
+        obs,
+        lambda x: flatten(x)
     ), original_shape
     
-@jax.jit
-def flatten_player_obs(player):
-    """
-    Flatten a batched_obs for a single player and return the original shape.
-    """
-    
-    champions, original_shape = flatten(player.champions)
-    items, _ = flatten(player.items)
-    traits, _ = flatten(player.traits)
-    scalars, _ = flatten(player.scalars)
-    
-    return PlayerObservation(
-        champions=champions,
-        items=items,
-        traits=traits,
-        scalars=scalars
-    ), original_shape
-    
-def batch_map_actions(actions: jnp.ndarray, obs: BatchedObservation):
+def batch_map_actions(actions: jnp.ndarray, mapping: list[BatchedMapping]):
     """
     Actions are in shape (Game, Player, Action)
     
@@ -205,17 +199,16 @@ def batch_map_actions(actions: jnp.ndarray, obs: BatchedObservation):
     for i in range(len(actions)):
         action_dict = map_actions(
             actions[i],
-            obs.player_ids[i],
-            obs.player_len[i]
+            mapping[i],
         )
         
         action_dicts.append(action_dict)
         
     return action_dicts
     
-def map_actions(actions: jnp.ndarray, player_ids: jnp.ndarray, player_len: jnp.int32):
-    actions = actions[:player_len]
-    player_ids = player_ids[:player_len]
+def map_actions(actions: jnp.ndarray, mapping: BatchedMapping):
+    actions = actions[:mapping.player_len]
+    player_ids = mapping.player_ids[:mapping.player_len]
     
     return {
         f"player_{player_id}": action

@@ -4,6 +4,8 @@ import jax.numpy as jnp
 import numpy as np
 import time
 
+import PoroX.modules.batch_utils as batch_utils
+
 """
 Just testing different jax functions.
 """

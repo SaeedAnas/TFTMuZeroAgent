@@ -11,7 +11,7 @@ from PoroX.test.utils import profile
 
 @pytest.fixture
 def hidden_state(first_obs, key):
-    obs = batch_utils.collect_obs(first_obs)
+    obs, _ = batch_utils.collect_obs(first_obs)
     
     repr_network = RepresentationNetwork(test_config)
     variables = repr_network.init(key, obs)

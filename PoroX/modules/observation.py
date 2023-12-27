@@ -17,10 +17,11 @@ class BatchedObservation:
     action_mask: chex.ArrayDevice
     opponents: PlayerObservation
     
-    # Mapping to keep track of which player is which
+@chex.dataclass(frozen=True)
+class BatchedMapping:
     player_ids: chex.ArrayDevice
     player_len: chex.ArrayDevice
-    
+
 class PoroXObservation(ObservationVector):
     def __init__(self, player):
         super().__init__(player)

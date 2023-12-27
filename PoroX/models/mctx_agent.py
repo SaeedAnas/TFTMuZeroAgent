@@ -469,7 +469,7 @@ class PoroXV1:
         
     def act(self, obs: BatchedObservation, game_batched=False):
         if game_batched:
-            obs, original_shape = batch_utils.flatten_multi_game_obs(obs)
+            obs, original_shape = batch_utils.flatten_obs(obs)
             policy_output, root = self.policy(obs)
             actions, action_weights, values =  self.unflatten(policy_output, root, original_shape)
         else:

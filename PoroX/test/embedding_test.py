@@ -19,7 +19,7 @@ import PoroX.modules.batch_utils as batch_utils
 from PoroX.test.utils import profile
 
 def test_champion_embedding(first_obs, key):
-    obs = batch_utils.collect_obs(first_obs)
+    obs, _ = batch_utils.collect_obs(first_obs)
     champion_vectors = obs.players.champions
     
     config = EmbeddingConfig()
@@ -37,7 +37,7 @@ def test_champion_embedding(first_obs, key):
     profile(N, apply, variables, champion_vectors)
     
 def test_player_embedding(first_obs, key):
-    obs = batch_utils.collect_obs(first_obs)
+    obs, _ = batch_utils.collect_obs(first_obs)
     players = obs.players
     
     config = EmbeddingConfig()
@@ -55,7 +55,7 @@ def test_player_embedding(first_obs, key):
     profile(N, apply, variables, players)
     
 def test_opponent_embedding(first_obs, key):
-    obs = batch_utils.collect_obs(first_obs)
+    obs, _ = batch_utils.collect_obs(first_obs)
     opponents = obs.opponents
     
     config = EmbeddingConfig()
@@ -73,7 +73,7 @@ def test_opponent_embedding(first_obs, key):
     profile(N, apply, variables, opponents)
     
 def test_representation_network(first_obs, key):
-    obs = batch_utils.collect_obs(first_obs)
+    obs, _ = batch_utils.collect_obs(first_obs)
     
     repr_network = RepresentationNetwork(config=test_config)
     variables = repr_network.init(key, obs)
@@ -89,7 +89,7 @@ def test_representation_network(first_obs, key):
     profile(N, apply, variables, obs)
     
 def test_batch_representation_network(first_batched_obs, key):
-    obs = batch_utils.collect_multi_game_obs(first_batched_obs)
+    obs, _ = batch_utils.collect_multi_game_obs(first_batched_obs)
     
     repr_network = RepresentationNetwork(config=test_config)
     variables = repr_network.init(key, obs)
@@ -111,7 +111,7 @@ def test_batch_representation_network(first_batched_obs, key):
     profile(N, apply, variables, obs2)
     
 def test_params_representation_network(first_obs, key):
-    obs = batch_utils.collect_obs(first_obs)
+    obs, _ = batch_utils.collect_obs(first_obs)
 
     repr_network = RepresentationNetwork(config=test_config)
     variables = repr_network.init(key, obs)
@@ -124,7 +124,7 @@ def test_representation_network_gpu(first_obs, key):
     # TODO: Gotta figure out how to get flax to work with jax-metal...
     
 def test_segment_embedding(first_obs, key):
-    obs = batch_utils.collect_obs(first_obs)
+    obs, _ = batch_utils.collect_obs(first_obs)
     e_config = EmbeddingConfig()
     s_config = SegmentConfig(segments=jnp.array([75]))
 

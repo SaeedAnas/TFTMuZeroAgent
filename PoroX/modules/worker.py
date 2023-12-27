@@ -18,15 +18,20 @@ def collect_gameplay_experience(agent, num_games=5):
     start_game = time.time()
     while not envs.is_terminated():
         start_action = time.time()
-        batched_obs = batch_utils.collect_multi_game_obs(obs)
+        batched_obs, mapping = batch_utils.collect_multi_game_obs(obs)
+
         output = agent.act(batched_obs, game_batched=True)
         
         step_actions = batch_utils.batch_map_actions(
             output.action,
-            batched_obs
+            mapping
         )
         
         envs.step(step_actions)
+        
+        # TODO: 
+        envs.store_experience(output, obs, mapping=batched_obs.player_ids)
+
         obs = envs.get_obs()
         print(f"Action time: {time.time() - start_action}")
     print(f"Game time: {time.time() - start_game}")

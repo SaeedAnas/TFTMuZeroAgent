@@ -11,7 +11,7 @@ from PoroX.test.utils import profile, softmax_action
 
 @pytest.fixture
 def actions(first_obs, key):
-    obs = batch_utils.collect_obs(first_obs)
+    obs, _ = batch_utils.collect_obs(first_obs)
 
     action_mask = obs.action_mask
     
