@@ -22,6 +22,7 @@ class ObservationMapping:
     player_ids: chex.ArrayDevice
     player_len: chex.ArrayDevice
     
+@jax.jit
 def compress_observation(observation: BatchedObservation):
     
     def compress_player(player: PlayerObservation):

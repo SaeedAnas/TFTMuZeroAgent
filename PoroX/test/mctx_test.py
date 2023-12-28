@@ -62,7 +62,7 @@ def test_gumbel_muzero_network(first_obs, key):
     print(step_actions)
 
     N=5
-    print(f"Profiling 1 game, {config.mctx_config.num_simulations} simulations, {config.mctx_config.max_num_considered_actions} sampled actions.")
+    print(f"Profiling 1 game, {config.mctx.num_simulations} simulations, {config.mctx.max_num_considered_actions} sampled actions.")
     profile(N, apply, obs)
     
 def test_batched_gumbel_muzero_network(first_batched_obs, key):
@@ -89,6 +89,6 @@ def test_batched_gumbel_muzero_network(first_batched_obs, key):
     print(step_actions)
 
     N=3
-    print(f"Profiling {output.action.shape[0]} batched games, {config.mctx_config.num_simulations} simulations, {config.mctx_config.max_num_considered_actions} sampled actions.")
+    print(f"Profiling {output.action.shape[0]} batched games, {config.mctx.num_simulations} simulations, {config.mctx.max_num_considered_actions} sampled actions.")
     profile(N, apply, obs)
 

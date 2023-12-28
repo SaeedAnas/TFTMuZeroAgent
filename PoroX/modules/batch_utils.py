@@ -1,3 +1,5 @@
+import time
+from functools import partial
 import jax
 import jax.numpy as jnp
 from PoroX.modules.observation import BatchedObservation, PlayerObservation, ObservationMapping
@@ -38,6 +40,7 @@ def collect(collection):
 def concat(collection, axis=0):
     return jax.tree_map(lambda *xs: jnp.concatenate(xs, axis=axis), *collection)
 
+@partial(jax.jit, static_argnums=(1,))
 def map_collection(collection, fn):
     return jax.tree_map(fn, collection)
 
@@ -124,10 +127,8 @@ def collect_list_obs(obs: dict):
         
         for player_obs in values
     ]
-    
     mapping = {
-        # player_id : idx
-        int(player_obs["player"].scalars[0]) : idx
+        player_obs["player"].scalars[0].astype(int): idx
         for idx, player_obs in enumerate(values)
     }
     

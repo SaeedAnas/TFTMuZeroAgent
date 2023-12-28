@@ -9,7 +9,7 @@ from PoroX.models.components.embedding.dynamics import action_space_to_action
 from PoroX.models.config import muzero_config, mctx_config, PoroXConfig, MCTXConfig
 
 import PoroX.modules.batch_utils as batch_utils
-from PoroX.modules.replay_buffer import create_trajectories, LocalBuffer, trajectory_analytics
+from PoroX.modules.replay_buffer import create_trajectories, LocalBuffer, trajectory_analytics, pad_trajectories, reshape_trajectories, combine_game_trajectories, sample_trajectory
 from PoroX.test.utils import profile
 
 def test_store_trajectories(first_obs, key):
@@ -22,8 +22,8 @@ def test_store_trajectories(first_obs, key):
         muzero=muzero_config,
         mctx=MCTXConfig(
             policy_type="gumbel",
-            num_simulations=2,
-            max_num_considered_actions=1,
+            num_simulations=4,
+            max_num_considered_actions=4,
         )
     )
     
@@ -31,14 +31,53 @@ def test_store_trajectories(first_obs, key):
     output = agent.act(batched_obs)
     # Dummy reward
     reward = jnp.zeros_like(output.value, dtype=jnp.float16)
-    trajectories = create_trajectories(output, first_obs, reward, mapping)
+    print(output.action)
     
-    N = 5000
-    profile(N, local_buffer.store_batch_trajectories, trajectories)
+    def apply(output, first_obs, reward, mapping):
+        trajectories = create_trajectories(output, first_obs, reward, mapping)
+        local_buffer.store_batch_trajectories(trajectories)
+        
+    N = 200
+    profile(N, apply, output, first_obs, reward, mapping)
     
-    # Test collection 
-    collected = local_buffer.collect_trajectories(unroll_steps=6)
-    
-    for id, trajectory in collected.items():
-        print(f"player_{id} trajectory analytics: ")
+    trajectories = local_buffer.get_trajectories()
+
+    for id, trajectory in trajectories.items():
+        print(f"Original player_{id} trajectory analytics: ")
+        print(f"Trajectory shape: {trajectory.action.shape}")
         trajectory_analytics(trajectory)
+
+    profile(1, pad_trajectories, trajectories)
+    padded_trajectories = pad_trajectories(trajectories)
+        
+    for id, trajectory in padded_trajectories.items():
+        print(f"Padded player_{id} trajectory analytics: ")
+        print(f"Trajectory shape: {trajectory.action.shape}")
+        trajectory_analytics(trajectory)
+
+    profile(1, reshape_trajectories, padded_trajectories)
+    reshaped_trajectories = reshape_trajectories(padded_trajectories)
+
+    for id, trajectory in reshaped_trajectories.items():
+        print(f"Reshaped player_{id} trajectory analytics: ")
+        print(f"Trajectory shape: {trajectory.action.shape}")
+        trajectory_analytics(trajectory)
+    
+    profile(1, combine_game_trajectories, reshaped_trajectories)
+    combined_trajectories = combine_game_trajectories(reshaped_trajectories)
+    
+    print("Combined trajectories Before Sampling: ")
+    print(f"Combined trajectories shape: {combined_trajectories.action.shape}")
+    trajectory_analytics(combined_trajectories)
+
+    profile(1, sample_trajectory, combined_trajectories, key, 12)
+    sampled_trajectory, combined_trajectories = sample_trajectory(combined_trajectories, key, batch_size=256)
+
+    print("Combined trajectories After Sampling: ")
+    print(f"Combined trajectories shape: {combined_trajectories.action.shape}")
+    trajectory_analytics(combined_trajectories)
+    
+    print("Sampled trajectory: ")
+    print(f"Sampled trajectory shape: {sampled_trajectory.action.shape}")
+    trajectory_analytics(sampled_trajectory)
+    
