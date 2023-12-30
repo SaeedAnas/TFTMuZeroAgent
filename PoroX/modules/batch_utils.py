@@ -40,10 +40,6 @@ def collect(collection):
 def concat(collection, axis=0):
     return jax.tree_map(lambda *xs: jnp.concatenate(xs, axis=axis), *collection)
 
-@partial(jax.jit, static_argnums=(1,))
-def map_collection(collection, fn):
-    return jax.tree_map(fn, collection)
-
 def pad_array(array, max_length=8, axis=0):
     """
     Pad observation arrays to a max_length.
@@ -62,9 +58,9 @@ def pad_collection(collection, max_length):
     Every item in the collection must be an array.
     """
 
-    return map_collection(
-        collection,
-        lambda x: pad_array(x, max_length=max_length)
+    return jax.tree_map(
+        lambda x: pad_array(x, max_length=max_length),
+        collection
     )
 
 def collect_obs(obs: dict):
@@ -105,9 +101,9 @@ def collect_obs(obs: dict):
         player_len=jnp.array(len(values)).astype(jnp.int8)
     )
     
-    padded_obs = map_collection(
+    padded_obs = jax.tree_map(
+        lambda x: pad_array(x, max_length=8),
         batched_obs,
-        lambda x: pad_array(x, max_length=8)
     )
     
     return padded_obs, mapping
@@ -171,9 +167,9 @@ def flatten_obs(obs):
     
     original_shape = obs.players.champions.shape
     
-    return map_collection(
-        obs,
-        lambda x: flatten(x)
+    return jax.tree_map(
+        lambda x: flatten(x),
+        obs
     ), original_shape
     
 def batch_map_actions(actions: jnp.ndarray, mapping: list[ObservationMapping]):

@@ -1,196 +1,217 @@
-import time
 import chex
 import jax
 import jax.numpy as jnp
 
-from PoroX.modules.observation import BatchedObservation, compress_observation, PlayerObservation
-import PoroX.modules.batch_utils as batch_utils
-
-from collections import defaultdict
-
-
 """
-Replay Buffer for storing experiences
+Replay Buffer for storing experiences.
+Inspired by:
+https://github.com/instadeepai/flashbax/blob/main/flashbax/buffers/trajectory_buffer.py
 """
-
-@chex.dataclass
-class Trajectory:
-    observation: BatchedObservation
-    action: chex.ArrayDevice
-    policy_logits: chex.ArrayDevice
-    value: chex.ArrayDevice
-    reward: chex.ArrayDevice
-
-
-# First we need a local buffer for each game
-
-# Lets make a prototype store function that stores a single game
-def create_trajectories(output, obs, reward, mapping):
+    
+@chex.dataclass(frozen=True)
+class ReplayBufferState:
+    buffer: chex.ArrayTree
+    base: chex.ArrayTree
+    unroll_steps: int
+    current_index: int
+    trajectory_len: int
+    
+def init(experience: chex.ArrayTree, unroll_steps: int = 6):
+    """Initialize the replay buffer using an initial experience.
+    
+    Creates a trajectory base object and expands it to the unroll_steps.
+    This will speed up the replay buffer by avoiding expand_dims, which is very costly.
+    
+    Args:
+        experience: chex.ArrayTree
+        unroll_steps: int
+    
+    Returns:
+        state: ReplayBufferState
     """
-    Store the output of an agent in the replay buffer.
-    
-    output: AgentOutput
-    - Contains policy_logits, action, and value
-    
-    obs: Dict Observation
-    
-    reward: jnp.ndarray
-    """
-    list_obs, list_mapping = batch_utils.collect_list_obs(obs)
 
-    trajectories = {}
-    
-    for player_id in mapping.player_ids:
-        player_id = int(player_id)
-        player_idx = list_mapping[player_id]
-
-        player_observation = list_obs[player_idx]
-        player_output = batch_utils.map_collection(output, lambda x: x[player_idx])
-        player_reward = reward[player_idx]
+    # Create the initial trajectory object
+    # The base object will have shape (1, unroll_steps, ...)
+    def create_base(experience, unroll_steps):
+        # zeros_like trajectory
+        experience_zeros = jax.tree_map(
+            lambda x: jnp.zeros_like(x),
+            experience
+        )
+        # Expand dims to (1, ...)
+        experience_expanded = jax.tree_map(
+            lambda x: jnp.expand_dims(x, axis=0),
+            experience_zeros
+        )
+        # Broadcast to (unroll_steps, ...)
+        experience_broadcast = jax.tree_map(
+            lambda x: jnp.broadcast_to(x, (unroll_steps,) + x.shape[1:]),
+            experience_expanded
+        )
+        # One final expand dims to (1, unroll_steps, ...)
+        return jax.tree_map(
+            lambda x: jnp.expand_dims(x, axis=0),
+            experience_broadcast
+        )
         
-        trajectory = Trajectory(
-            observation=compress_observation(player_observation),
-            action=player_output.action,
-            policy_logits=player_output.action_weights,
-            value=player_output.value,
-            reward=player_reward,
-        )
-        # We need to expand the trajectory
-        # So we can concatenate it with other trajectories
-        expanded_trajectory = batch_utils.map_collection(trajectory, lambda x: jnp.expand_dims(x, axis=0))
-
-        trajectories[player_id] = expanded_trajectory
-    
-    return trajectories
-
-def calculate_max_len(current_len, unroll_steps):
-    """
-    We need to make max_len be a multiple of unroll_steps.
-    Ex. current_len = 10, unroll_steps = 4 -> max_len = 12
-    """
-    max_len = current_len + (-current_len % unroll_steps) # This was copilot
-    return max_len
-    
-def pad_trajectories(trajectories, unroll_steps=6):
-    """
-    Pad trajectories to be a multiple of unroll_steps.
-    """
-    return batch_utils.map_collection(
-        trajectories,
-        lambda x: batch_utils.pad_array(
-            x,
-            max_length=calculate_max_len(len(x), unroll_steps)
-        )
+    base = create_base(experience, unroll_steps)
+        
+    return ReplayBufferState(
+        buffer=base,
+        base=base,
+        unroll_steps=unroll_steps,
+        current_index=0,
+        trajectory_len=0,
     )
     
-def reshape_trajectories(trajectories, unroll_steps=6):
-    """
-    Reshape trajectories to be a multiple of unroll_steps.
-    Ex. trajectory shape: (12, ...), unroll_steps = 4 -> shape = (3, 4, ...)
-    """
-    return batch_utils.map_collection(
-        trajectories,
-        lambda x: jnp.reshape(
-            x,
-            newshape=(-1, unroll_steps) + x.shape[1:]
-        )
+# --- Utility functions ---
+@jax.jit
+def insert(buffer, experience, index):
+    return jax.tree_map(
+        lambda x, t: x.at[-1, index, ...].set(t),
+        buffer,
+        experience
+    )
+    
+# Concatenate a new trajectory base to the buffer
+@jax.jit
+def concat(buffer, trajectory_base):
+    return jax.tree_map(
+        lambda x, y: jnp.concatenate((x, y), axis=0),
+        buffer,
+        trajectory_base
     )
 
-
-def combine_game_trajectories(trajectories):
-    """
-    Combine dict of trajectories into a single trajectory.
-    """
-    return batch_utils.concat(list(trajectories.values()))
+@jax.jit
+def concat_many(buffers):
+    return jax.tree_map(
+        lambda *xs: jnp.concatenate(xs, axis=0),
+        *buffers
+    )
+        
+def add(state: ReplayBufferState, experience: chex.ArrayTree):
+    """Add an experience to the replay buffer.
     
-
-def sample_trajectory(trajectory, key, batch_size=64):
+    To speed up the replay buffer, we insert the experience into the last index of the buffer.
+    Once the latest trajectory is full, we concatenate a new trajectory base to the buffer.
+    
+    Args:
+        state: ReplayBufferState
+        experience: chex.ArrayTree
+    
+    Returns:
+        state: ReplayBufferState
     """
-    Samples trajectories from a single trajectory.
-    """
-    trajectory_len = len(trajectory.action)
+        
+    buffer = insert(state.buffer, experience, state.current_index)
+    current_index = state.current_index + 1
 
-    # First need to create a list of indices to sample from
+    # If we have reached the end of the buffer, we need to concatenate a new trajectory base
+    if current_index == state.unroll_steps:
+        buffer = concat(buffer, state.base)
+        current_index = 0
+        trajectory_len = state.trajectory_len + 1
+        
+        return ReplayBufferState(
+            buffer=buffer,
+            base=state.base,
+            unroll_steps=state.unroll_steps,
+            current_index=current_index,
+            trajectory_len=trajectory_len,
+        )
+        
+    return ReplayBufferState(
+        buffer=buffer,
+        base=state.base,
+        unroll_steps=state.unroll_steps,
+        current_index=current_index,
+        trajectory_len=state.trajectory_len,
+    )
+    
+def can_sample(state: ReplayBufferState, batch_size: int):
+    """Checks if the replay buffer can sample a batch of trajectories"""
+    return state.trajectory_len >= batch_size
+
+def sample(state: ReplayBufferState, key: jax.random.PRNGKey, batch_size: int):
+    """Sample a batch of trajectories from the replay buffer
+    
+    Replay Buffer must have at least batch_size trajectories to sample from.
+    
+    Args:
+        state: ReplayBufferState
+        batch_size: int
+        
+    Returns:
+        sample_buffer: chex.ArrayTree
+        state: ReplayBufferState
+    """
+    if not can_sample(state, batch_size):
+        raise ValueError("Cannot sample from replay buffer. Not enough trajectories.")
+
+    # First we need to create a list of indices to sample from
     # Indices need to be unique
-    sample_indices = jnp.arange(trajectory_len)
+    sample_indices = jnp.arange(state.trajectory_len)
     sample_indices = jax.random.shuffle(key, sample_indices)
     sample_indices = sample_indices[:batch_size]
     
-    print(sample_indices)
-
-    # Now we can sample from the trajectory
-    sample_trajectory = batch_utils.map_collection(
-        trajectory,
-        lambda x: x[sample_indices]
+    # Now we can sample from the buffer
+    sample_buffer = jax.tree_map(
+        lambda x: x[sample_indices],
+        state.buffer,
     )
     
-    # Now we need to remove the sampled indices from the original trajectory
-    new_trajectory = batch_utils.map_collection(
-        trajectory,
-        lambda x: jnp.delete(x, sample_indices, axis=0)
+    # Now we need to remove the sampled indices from the original buffer
+    buffer = jax.tree_map(
+        lambda x: jnp.delete(x, sample_indices, axis=0),
+        state.buffer,
     )
     
-    return sample_trajectory, new_trajectory
+    # Update the trajectory_len
+    trajectory_len = state.trajectory_len - batch_size
     
+    return sample_buffer, ReplayBufferState(
+        buffer=buffer,
+        base=state.base,
+        unroll_steps=state.unroll_steps,
+        current_index=state.current_index,
+        trajectory_len=trajectory_len,
+    )
 
+def clear(state: ReplayBufferState):
+    """Clears the replay buffer"""
+    del state.buffer
 
-def trajectory_analytics(trajectory):
-    print("Trajectory size:")
-    p_champ = trajectory.observation.players.champions.nbytes
-    p_item = trajectory.observation.players.items.nbytes
-    p_scalar = trajectory.observation.players.scalars.nbytes
-    p_trait = trajectory.observation.players.traits.nbytes
-    o_champ = trajectory.observation.opponents.champions.nbytes
-    o_item = trajectory.observation.opponents.items.nbytes
-    o_scalar = trajectory.observation.opponents.scalars.nbytes
-    o_trait = trajectory.observation.opponents.traits.nbytes
-    mask = trajectory.observation.action_mask.nbytes
-    action = trajectory.action.nbytes
-    policy = trajectory.policy_logits.nbytes
-    value = trajectory.value.nbytes
-    reward = trajectory.reward.nbytes
+    buffer = state.base
+    current_index = 0
+    trajectory_len = 0
     
-    bytes = jnp.array([
-        p_champ,
-        p_item,
-        p_scalar,
-        p_trait,
-        o_champ,
-        o_item,
-        o_scalar,
-        o_trait,
-        mask,
-        action,
-        policy,
-        value,
-        reward
-    ])
+    return ReplayBufferState(
+        buffer=buffer,
+        base=state.base,
+        unroll_steps=state.unroll_steps,
+        current_index=current_index,
+        trajectory_len=trajectory_len,
+    )
     
-    print(f"trajectory size: {jnp.sum(bytes) / 1e6} mb, for {len(trajectory.action)} steps")
-
-class LocalBuffer:
+def combine(states: list[ReplayBufferState]):
     """
-    Store game trajectories for each agent.
+    Combine a list of replay buffer states into a single replay buffer state.
+    This will usually be used to combine replay buffer states from different players and different games.
     """
-    player_trajectories: dict[int, Trajectory]
+    if len(states) == 0:
+        raise ValueError("Cannot combine empty list of replay buffer states")
+
+    buffer = concat_many([state.buffer for state in states])
+    trajectory_len = sum([state.trajectory_len for state in states])
+
+    base = states[0].base
+    unroll_steps = states[0].unroll_steps
+    current_index = 0
     
-    def __init__(self):
-        self.player_trajectories = {}
-        
-    def store_trajectory(self, player_id, trajectory):
-        """
-        Concat for memory efficiency.
-        """
-        if player_trajectory := self.player_trajectories.get(player_id):
-            self.player_trajectories[player_id] = batch_utils.concat(
-                [player_trajectory, trajectory]
-            )
-        else:
-            self.player_trajectories[player_id] = trajectory
-    
-    def store_batch_trajectories(self, trajectories):
-        for player_id, trajectory in trajectories.items():
-            self.store_trajectory(player_id, trajectory)
-            
-    def get_trajectories(self):
-        return self.player_trajectories
+    return ReplayBufferState(
+        buffer=buffer,
+        base=base,
+        unroll_steps=unroll_steps,
+        current_index=current_index,
+        trajectory_len=trajectory_len,
+    )

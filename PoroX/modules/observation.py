@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import chex
-from Simulator.porox.observation import ObservationVector, ActionVector
+from Simulator.porox.observation import ObservationVector
 
 @chex.dataclass(frozen=True)
 class PlayerObservation:
@@ -21,40 +21,6 @@ class BatchedObservation:
 class ObservationMapping:
     player_ids: chex.ArrayDevice
     player_len: chex.ArrayDevice
-    
-@jax.jit
-def compress_observation(observation: BatchedObservation):
-    
-    def compress_player(player: PlayerObservation):
-        """
-        Compress player
-        We can compute the stats later.
-        """
-
-        # Compress champions by removing stats and all traits except chosen
-        champions = player.champions[..., :7].astype(jnp.int8)
-        scalars = player.scalars.astype(jnp.int8)
-        items = player.items.astype(jnp.int8)
-        traits = player.traits.astype(jnp.int8)
-        
-        return PlayerObservation(
-            champions=champions,
-            scalars=scalars,
-            items=items,
-            traits=traits
-        )
-        
-    def compress_action_mask(action_mask):
-        """
-        Compress action mask
-        """
-        return action_mask.astype(jnp.int8)
-    
-    return BatchedObservation(
-        players=compress_player(observation.players),
-        action_mask=compress_action_mask(observation.action_mask),
-        opponents=compress_player(observation.opponents),
-    )
 
 class PoroXObservation(ObservationVector):
     def __init__(self, player):
