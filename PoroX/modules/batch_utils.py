@@ -1,8 +1,6 @@
-import time
-from functools import partial
 import jax
 import jax.numpy as jnp
-from PoroX.modules.observation import BatchedObservation, PlayerObservation, ObservationMapping
+from PoroX.modules.observation import BatchedObservation, ObservationMapping
 
 @jax.jit
 def flatten(x):
@@ -40,6 +38,10 @@ def collect(collection):
 def concat(collection, axis=0):
     return jax.tree_map(lambda *xs: jnp.concatenate(xs, axis=axis), *collection)
 
+@jax.jit
+def index(collection, idx):
+    return jax.tree_map(lambda x: x[idx], collection)
+
 def pad_array(array, max_length=8, axis=0):
     """
     Pad observation arrays to a max_length.
@@ -63,7 +65,7 @@ def pad_collection(collection, max_length):
         collection
     )
 
-def collect_obs(obs: dict):
+def collect_obs(obs: dict) -> (BatchedObservation, ObservationMapping):
     # Ensure same order
     values = list(obs.values())
 
@@ -107,44 +109,8 @@ def collect_obs(obs: dict):
     )
     
     return padded_obs, mapping
-
-def collect_list_obs(obs: dict):
-    """
-    Return obs as a list of BatchedObservations.
-    """
-    values = list(obs.values())
-
-    batched_obs = [
-        BatchedObservation(
-            players=player_obs["player"],
-            action_mask=player_obs["action_mask"],
-            opponents=collect(player_obs["opponents"]),
-        )
-        
-        for player_obs in values
-    ]
-    mapping = {
-        player_obs["player"].scalars[0].astype(int): idx
-        for idx, player_obs in enumerate(values)
-    }
     
-    return batched_obs, mapping
-
-@jax.jit
-def invert_and_flatten_action_mask(action_mask):
-    """Utility to make action mask be compatible with mctx"""
-    
-    # Flatten last two dimensions
-    action_shape = action_mask.shape
-    mask_flattened = jnp.reshape(action_mask, action_shape[:-2] + (-1,))
-    
-    # Invert mask
-    inverted_mask = 1 - mask_flattened
-    
-    return inverted_mask
-
-    
-def collect_multi_game_obs(obs):
+def collect_multi_game_obs(obs) -> (BatchedObservation, list[ObservationMapping]):
     """
     Collect a batched_obs for multiple games.
     """
@@ -158,6 +124,50 @@ def collect_multi_game_obs(obs):
         batched_mapping.append(mapping)
         
     return collect(batched_obs), batched_mapping
+
+def split_obs(obs: BatchedObservation, mapping: ObservationMapping) -> dict[str, BatchedObservation]:
+    """
+    Split a batched observation into a dict of batched observations.
+    """
+    player_len = mapping.player_len
+    indices = jnp.arange(player_len)
+
+    obs_list = [
+        index(obs, idx)
+        for idx in indices
+    ]
+    
+    return {
+        f"player_{player_id}": player_obs
+        for player_id, player_obs in zip(mapping.player_ids, obs_list)
+    }
+    
+def split_multi_game_obs(obs: BatchedObservation, mapping: list[ObservationMapping]) -> list[dict[BatchedObservation]]:
+    """
+    Split a batched game observation into a list of batched observations.
+    Obs items will be in shape (Game, 8, ...)
+    Just use split_obs for each game.
+    """
+    return [
+        split_obs(
+            index(obs, i),
+            mapping[i]
+        )
+        for i in range(len(mapping))
+    ]
+
+@jax.jit
+def invert_and_flatten_action_mask(action_mask):
+    """Utility to make action mask be compatible with mctx"""
+    
+    # Flatten last two dimensions
+    action_shape = action_mask.shape
+    mask_flattened = jnp.reshape(action_mask, action_shape[:-2] + (-1,))
+    
+    # Invert mask
+    inverted_mask = 1 - mask_flattened
+    
+    return inverted_mask
 
 @jax.jit
 def flatten_obs(obs):
@@ -194,7 +204,7 @@ def batch_map_actions(actions: jnp.ndarray, mapping: list[ObservationMapping]):
         
         for i in range(len(actions))
     ]
-    
+
 def map_actions(actions: jnp.ndarray, mapping: ObservationMapping):
     actions = actions[:mapping.player_len]
     player_ids = mapping.player_ids[:mapping.player_len]

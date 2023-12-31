@@ -29,11 +29,19 @@ def test_flattened_game_obs(first_batched_obs):
     
     N = 100
     profile(N, batch_utils.collect_multi_game_obs, first_batched_obs)
+
+def test_split_obs(first_obs):
+    obs, mapping = batch_utils.collect_obs(first_obs)
     
-def test_list_obs(first_obs):
-    obs, mapping = batch_utils.collect_list_obs(first_obs)
+    split_obs = batch_utils.split_obs(obs, mapping)
     
-    print(len(obs))
+    print(split_obs["player_0"].players.champions.shape)
+    profile(100, batch_utils.split_obs, obs, mapping)
     
-    N = 1000
-    profile(N, batch_utils.collect_list_obs, first_obs)
+def test_split_multi_game_obs(first_batched_obs):
+    obs, mapping = batch_utils.collect_multi_game_obs(first_batched_obs)
+    
+    split_obs = batch_utils.split_multi_game_obs(obs, mapping)
+    
+    N=100
+    profile(N, batch_utils.split_multi_game_obs, obs, mapping)

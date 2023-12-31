@@ -1,104 +1,98 @@
 import ray
+import jax
 import time
 
 from Simulator.porox.tft_simulator import parallel_env, TFTConfig
 
 import PoroX.modules.batch_utils as batch_utils
+from PoroX.modules.game import BatchedEnv, WorkerConfig
+from PoroX.models.config import muzero_config, PoroXConfig, MCTXConfig
+from PoroX.models.mctx_agent import PoroXV1
 from PoroX.modules.observation import PoroXObservation
+import PoroX.modules.trajectory as trajectory
 
-def collect_gameplay_experience(agent, num_games=5):
-    """Collects gameplay experience from the environment using the agent.
-    Currently very minimal to be used for testing purposes.
-    """
-    config = TFTConfig(observation_class=PoroXObservation)
-    envs = BatchedEnv(lambda: parallel_env(config), num_games)
+def run_worker():
+    # Test function to make sure worker runs properly
     
-    obs = envs.get_obs()
+    # --- Initialize Config --- #
+    tft_config = TFTConfig(observation_class=PoroXObservation)
     
-    start_game = time.time()
+    worker_config = WorkerConfig(
+        env_fn=lambda: parallel_env(tft_config),
+        unroll_steps=6,
+        num_games=5,
+    )
+    
+    porox_config = PoroXConfig(
+        muzero=muzero_config,
+        mctx=MCTXConfig(
+            policy_type="gumbel",
+            num_simulations=4,
+            max_num_considered_actions=2,
+        )
+    )
+    
+    # --- Initialize Agent --- #
+    def get_init_obs():
+        """
+        Get a dummy observation to initialize the agent.
+        """
+        dummy_env = parallel_env(tft_config)
+        dummy_obs, _ = dummy_env.reset()
+        batched_obs, _ = batch_utils.collect_obs(dummy_obs)
+        return batched_obs
+
+    def init_porox():
+        key = jax.random.PRNGKey(10)
+        obs = get_init_obs()
+        agent = PoroXV1(porox_config, key, obs)
+        
+        return agent
+    
+    init_time = time.time()
+    print("Initializing...")
+    # --- Create Agent --- #
+    agent = init_porox()
+    
+    # --- Initialize Environments --- #
+    envs = BatchedEnv(worker_config)
+    
+    # --- Reset envs --- #
+    obs, infos = envs.reset()
+
+    print(f"Init time: {time.time() - init_time}")
+    
+    # --- Game Loop --- #
+    game_time = time.time()
+    print("Starting game loop...")
     while not envs.is_terminated():
-        start_action = time.time()
+        step_time = time.time()
+        # --- Convert Obs into usable format --- #
+        act_time = time.time()
         batched_obs, mapping = batch_utils.collect_multi_game_obs(obs)
-
+        
+        # --- Agent Step --- #
         output = agent.act(batched_obs, game_batched=True)
         
+        # --- Convert Actions into usable format --- #
         step_actions = batch_utils.batch_map_actions(
             output.action,
             mapping
         )
+        print(f"Act time: {time.time() - act_time}")
         
-        envs.step(step_actions)
-        
-        # TODO: 
-        envs.store_experience(output, obs, mapping=batched_obs.player_ids)
+        env_time = time.time()
+        # --- Step Envs --- #
+        obs, reward, terminated, truncated, infos = envs.step(step_actions)
+        print(f"Env time: {time.time() - env_time}")
 
-        obs = envs.get_obs()
-        print(f"Action time: {time.time() - start_action}")
-    print(f"Game time: {time.time() - start_game}")
-    
-def collect_gameplay_experience_ray(agent, num_games=5):
-    config = TFTConfig(observation_class=PoroXObservation)
-    envs = BatchedEnv(lambda: parallel_env(config), num_games)
-    
-    obs = envs.get_obs()
-    
-    start_game = time.time()
-
-    while not envs.is_terminated():
-        start_action = time.time()
-        actions = agent.act(obs)
-        envs.step(actions)
-        obs = envs.get_obs()
-        print(f"Action time: {time.time() - start_action}")
-    print(f"Game time: {time.time() - start_game}")
-
-@ray.remote(num_cpus=0.5)
-class EnvWrapper:
-    """A dataclass to hold the state of an environment."""
-    def __init__(self, env):
-        self.env = env
-        self.obs, self.infos = env.reset()
+        # --- Create Trajectories to add to buffer --- #
+        buffer_time = time.time()
+        trajectories = trajectory.create_batch_trajectories(output, batched_obs, reward, mapping)
+        envs.add_experience(trajectories)
+        print(f"Buffer time: {time.time() - buffer_time}")
         
-        self.terminated = {agent: False for agent in env.agents}
-        self.truncated = {agent: False for agent in env.agents}
+        print(f"Step time: {time.time() - step_time}")
         
-    def step(self, actions):
-        if self.is_terminated():
-            # Just don't update the state if the game is over.
-            return
-
-        self.obs, rewards, self.terminated, self.truncated, self.infos = self.env.step(actions)
-        
-    def is_terminated(self):
-        return all(self.terminated.values())
-    
-    def get_obs(self):
-        return self.obs
-        
-class BatchedEnv:
-    """
-    Allow for batched data collection from multiple games.
-    """
-    def __init__(self, env_fn, num_games):
-        self.envs = [
-            EnvWrapper.remote(env_fn())
-            for _ in range(num_games)
-        ]
-        
-    def step(self, batch_actions):
-        ray.get([
-            env.step.remote(batch_actions[i])
-            for i, env in enumerate(self.envs)
-        ])
-            
-    def get_obs(self):
-        return ray.get([
-            env.get_obs.remote()
-            for env in self.envs
-        ])
-        
-    def is_terminated(self):
-        return all(ray.get([
-            env.is_terminated.remote()
-            for env in self.envs
-        ]))
+    # --- End of Game Loop --- #
+    print(f"Game time: {time.time() - game_time}")
