@@ -1,5 +1,5 @@
 import torch
-import torch.nn
+import torch.nn as nn
 
 import config
 
@@ -8,6 +8,7 @@ from Models.MuZero_torch_agent import RepNetwork
 from Simulator.config import MAX_CHAMPION_IN_SET, MAX_ITEMS_IN_SET, BOARD_SIZE, BENCH_SIZE, SHOP_SIZE, ITEM_BENCH_SIZE
 from Simulator.origin_class_stats import tiers
 from Models.torch_layers import MultiMlp, ResidualBlock, TransformerEncoder, mlp
+
 
 class RepresentationTesting(AbstractNetwork):
     def __init__(self, model_config):
@@ -27,7 +28,8 @@ class RepresentationTesting(AbstractNetwork):
         self.model_config = model_config
 
     def representation(self, observation):
-        observation = {label: torch.from_numpy(value).float().to(config.DEVICE) for label, value in observation.items()}
+        observation = {label: torch.from_numpy(value).float().to(
+            config.DEVICE) for label, value in observation.items()}
         return self.representation_network(observation)
 
     def prediction(self, encoded_state):
@@ -60,7 +62,8 @@ class PredNetwork(torch.nn.Module):
     def __init__(self, model_config) -> torch.nn.Module:
         super().__init__()
         self.comp_predictor_network = MultiMlp(model_config.HIDDEN_STATE_SIZE,
-                                               [model_config.LAYER_HIDDEN_SIZE] * model_config.N_HEAD_HIDDEN_LAYERS,
+                                               [model_config.LAYER_HIDDEN_SIZE] *
+                                               model_config.N_HEAD_HIDDEN_LAYERS,
                                                config.TEAM_TIERS_VECTOR)
 
         # self.champ_predictor_network = MultiMlp(model_config.HIDDEN_STATE_SIZE,
@@ -95,7 +98,8 @@ class GeminiRepresentation(torch.nn.Module):
 
         # Input size from create_champion_vector
         self.champion_embedding = torch.nn.Linear(
-            MAX_CHAMPION_IN_SET + 1 + MAX_ITEMS_IN_SET * 3 + 2 + 1 + len(list(tiers.keys())),
+            MAX_CHAMPION_IN_SET + 1 + MAX_ITEMS_IN_SET *
+            3 + 2 + 1 + len(list(tiers.keys())),
             model_config.CHAMPION_EMBEDDING_DIM
         )
 
@@ -104,7 +108,8 @@ class GeminiRepresentation(torch.nn.Module):
             model_config.CHAMPION_EMBEDDING_DIM
         )
 
-        self.item_embedding = torch.nn.Linear(MAX_ITEMS_IN_SET + 1, model_config.CHAMPION_EMBEDDING_DIM)
+        self.item_embedding = torch.nn.Linear(
+            MAX_ITEMS_IN_SET + 1, model_config.CHAMPION_EMBEDDING_DIM)
 
         self.board_encoder = TransformerEncoder(
             model_config.CHAMPION_EMBEDDING_DIM,
@@ -133,13 +138,17 @@ class GeminiRepresentation(torch.nn.Module):
 
         # Combine encoded features from all components
         self.feature_combiner = mlp(
-            (BOARD_SIZE + BENCH_SIZE + SHOP_SIZE + ITEM_BENCH_SIZE) * model_config.CHAMPION_EMBEDDING_DIM + 7 + len(config.TEAM_TIERS_VECTOR),
-            [model_config.LAYER_HIDDEN_SIZE] * model_config.N_HEAD_HIDDEN_LAYERS,
+            (BOARD_SIZE + BENCH_SIZE + SHOP_SIZE + ITEM_BENCH_SIZE) *
+            model_config.CHAMPION_EMBEDDING_DIM +
+            7 + len(config.TEAM_TIERS_VECTOR),
+            [model_config.LAYER_HIDDEN_SIZE] *
+            model_config.N_HEAD_HIDDEN_LAYERS,
             model_config.HIDDEN_STATE_SIZE
         )
 
         self.feature_processor = mlp(model_config.HIDDEN_STATE_SIZE,
-                                     [model_config.LAYER_HIDDEN_SIZE] * model_config.N_HEAD_HIDDEN_LAYERS,
+                                     [model_config.LAYER_HIDDEN_SIZE] *
+                                     model_config.N_HEAD_HIDDEN_LAYERS,
                                      model_config.HIDDEN_STATE_SIZE)
 
         # Optional: Add residual connections around encoders and combiner for better gradient flow
@@ -147,7 +156,8 @@ class GeminiRepresentation(torch.nn.Module):
         self.bench_residual = ResidualBlock(self.bench_encoder, 9)
         self.shop_residual = ResidualBlock(self.shop_encoder, 5)
         self.item_bench_residual = ResidualBlock(self.item_bench_encoder, 10)
-        self.combiner_residual = ResidualBlock(self.feature_processor, model_config.HIDDEN_STATE_SIZE, local_norm=False)
+        self.combiner_residual = ResidualBlock(
+            self.feature_processor, model_config.HIDDEN_STATE_SIZE, local_norm=False)
 
     def forward(self, observation):
         # --- Encode Individual Components --- #
@@ -179,3 +189,23 @@ class GeminiRepresentation(torch.nn.Module):
         hidden_state = self.feature_processor(hidden_state)
 
         return hidden_state
+
+
+class TraitPredictor(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(26, 128),
+            nn.GELU(),
+            nn.Linear(128, 128),
+            nn.GELU(),
+            nn.Linear(128, 128),
+            nn.GELU(),
+            nn.Linear(128, 26*5)
+        )
+
+    def forward(self, x):
+        logits = self.mlp(x)
+        # reshape into 26, 5
+        logits = logits.view(-1, 26, 5)
+        return logits
