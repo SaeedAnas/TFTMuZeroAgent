@@ -8,6 +8,7 @@
 #include <cmath>
 #include <random>
 #include <numeric>
+#include <cassert>
 
 #ifdef _WIN32
 #include "..\utils.cpp"
@@ -15,7 +16,8 @@
 #include "../utils.cpp"
 #endif
 
-namespace tree{
+namespace tree
+{
 
     CSearchResults::CSearchResults()
     {
@@ -39,7 +41,7 @@ namespace tree{
         }
     }
 
-    CSearchResults::~CSearchResults(){}
+    CSearchResults::~CSearchResults() {}
 
     //*********************************************************
 
@@ -61,7 +63,7 @@ namespace tree{
 
         // gumbel muzero related code
         this->gumbel_scale = 10.0;
-        this->gumbel_rng=0.0;
+        this->gumbel_rng = 0.0;
     }
 
     CNode::CNode(float prior, std::vector<int> &legal_actions)
@@ -86,11 +88,11 @@ namespace tree{
 
         // gumbel muzero related code
         this->gumbel_scale = 10.0;
-        this->gumbel_rng=0.0;
+        this->gumbel_rng = 0.0;
         this->gumbel = generate_gumbel(this->gumbel_scale, this->gumbel_rng, legal_actions.size());
     }
 
-    CNode::~CNode(){}
+    CNode::~CNode() {}
 
     void CNode::expand(int to_play, int current_latent_state_index, int batch_index, float reward, float value, const std::vector<float> &policy_logits)
     {
@@ -122,38 +124,42 @@ namespace tree{
         float temp_policy;
         float policy_sum = 0.0;
 
-        #ifdef _WIN32
+#ifdef _WIN32
         // Create dynamic array
-        float* policy = new float[action_num];
-        #else
+        float *policy = new float[action_num];
+#else
         float policy[action_num];
-        #endif
+#endif
 
         float policy_max = FLOAT_MIN;
-        for(auto a: this->legal_actions){
-            if(policy_max < policy_logits[a]){
+        for (auto a : this->legal_actions)
+        {
+            if (policy_max < policy_logits[a])
+            {
                 policy_max = policy_logits[a];
             }
         }
 
-        for(auto a: this->legal_actions){
+        for (auto a : this->legal_actions)
+        {
             temp_policy = exp(policy_logits[a] - policy_max);
             policy_sum += temp_policy;
             policy[a] = temp_policy;
         }
 
         float prior;
-        for(auto a: this->legal_actions){
+        for (auto a : this->legal_actions)
+        {
             prior = policy[a] / policy_sum;
             std::vector<int> tmp_empty;
             this->children[a] = CNode(prior, tmp_empty); // only for muzero/efficient zero, not support alphazero
         }
 
-        #ifdef _WIN32
+#ifdef _WIN32
         // free the memory
         delete[] policy;
-        #else
-        #endif
+#else
+#endif
     }
 
     void CNode::add_exploration_noise(float exploration_fraction, const std::vector<float> &noises)
@@ -166,9 +172,10 @@ namespace tree{
             - noises: the vector of noises added to each child node.
         */
         float noise, prior;
-        for(int i =0; i<this->legal_actions.size(); ++i){
+        for (int i = 0; i < this->legal_actions.size(); ++i)
+        {
             noise = noises[i];
-            CNode* child = this->get_child(this->legal_actions[i]);
+            CNode *child = this->get_child(this->legal_actions[i]);
 
             prior = child->prior;
             child->prior = prior * (1 - exploration_fraction) + noise * exploration_fraction;
@@ -188,8 +195,9 @@ namespace tree{
             - discount_factor: the discount_factor of reward.
         */
         std::vector<float> child_value;
-        for(auto a: this->legal_actions){
-            CNode* child = this->get_child(a);
+        for (auto a : this->legal_actions)
+        {
+            CNode *child = this->get_child(a);
             float true_reward = child->reward;
             float qsa = true_reward + discount_factor * child->value();
             child_value.push_back(qsa);
@@ -209,9 +217,11 @@ namespace tree{
         */
         float total_unsigned_q = 0.0;
         int total_visits = 0;
-        for(auto a: this->legal_actions){
-            CNode* child = this->get_child(a);
-            if(child->visit_count > 0){
+        for (auto a : this->legal_actions)
+        {
+            CNode *child = this->get_child(a);
+            if (child->visit_count > 0)
+            {
                 float true_reward = child->reward;
                 float qsa = true_reward + discount_factor * child->value();
                 total_unsigned_q += qsa;
@@ -220,10 +230,12 @@ namespace tree{
         }
 
         float mean_q = 0.0;
-        if(isRoot && total_visits > 0){
+        if (isRoot && total_visits > 0)
+        {
             mean_q = (total_unsigned_q) / (total_visits);
         }
-        else{
+        else
+        {
             mean_q = (parent_q + total_unsigned_q) / (total_visits + 1);
         }
         return mean_q;
@@ -319,19 +331,22 @@ namespace tree{
         float infymin = -std::numeric_limits<float>::infinity();
         std::vector<int> child_visit_count;
         std::vector<float> child_prior;
-        for(auto a: this->legal_actions){
-            CNode* child = this->get_child(a);
+        for (auto a : this->legal_actions)
+        {
+            CNode *child = this->get_child(a);
             child_visit_count.push_back(child->visit_count);
             child_prior.push_back(child->prior);
         }
-        assert(child_visit_count.size()==child_prior.size());
+        assert(child_visit_count.size() == child_prior.size());
         // compute the completed value
         std::vector<float> completed_qvalues = qtransform_completed_by_mix_value(this, child_visit_count, child_prior, discount_factor);
         std::vector<float> values;
-        for (int i=0;i<action_space_size;i++){
+        for (int i = 0; i < action_space_size; i++)
+        {
             values.push_back(infymin);
         }
-        for (int i=0;i<child_prior.size();i++){
+        for (int i = 0; i < child_prior.size(); i++)
+        {
             values[this->legal_actions[i]] = completed_qvalues[i];
         }
 
@@ -353,7 +368,8 @@ namespace tree{
     // Gumbel Muzero related code
     //*********************************************************
 
-    std::vector<float> CNode::get_policy(float discount_factor, int action_space_size){
+    std::vector<float> CNode::get_policy(float discount_factor, int action_space_size)
+    {
         /*
         Overview:
             Compute the improved policy of the current node.
@@ -364,19 +380,22 @@ namespace tree{
         float infymin = -std::numeric_limits<float>::infinity();
         std::vector<int> child_visit_count;
         std::vector<float> child_prior;
-        for(auto a: this->legal_actions){
-            CNode* child = this->get_child(a);
+        for (auto a : this->legal_actions)
+        {
+            CNode *child = this->get_child(a);
             child_visit_count.push_back(child->visit_count);
             child_prior.push_back(child->prior);
         }
-        assert(child_visit_count.size()==child_prior.size());
+        assert(child_visit_count.size() == child_prior.size());
         // compute the completed value
         std::vector<float> completed_qvalues = qtransform_completed_by_mix_value(this, child_visit_count, child_prior, discount_factor);
         std::vector<float> probs;
-        for (int i=0;i<action_space_size;i++){
+        for (int i = 0; i < action_space_size; i++)
+        {
             probs.push_back(infymin);
         }
-        for (int i=0;i<child_prior.size();i++){
+        for (int i = 0; i < child_prior.size(); i++)
+        {
             probs[this->legal_actions[i]] = child_prior[i] + completed_qvalues[i];
         }
 
@@ -396,7 +415,7 @@ namespace tree{
         this->root_num = 0;
     }
 
-    CRoots::CRoots(int root_num, std::vector<std::vector<int> > &legal_actions_list)
+    CRoots::CRoots(int root_num, std::vector<std::vector<int>> &legal_actions_list)
     {
         /*
         Overview:
@@ -416,7 +435,7 @@ namespace tree{
 
     CRoots::~CRoots() {}
 
-    void CRoots::prepare(float root_noise_weight, const std::vector<std::vector<float> > &noises, const std::vector<float> &rewards, const std::vector<float> &values, const std::vector<std::vector<float> > &policies, std::vector<int> &to_play_batch)
+    void CRoots::prepare(float root_noise_weight, const std::vector<std::vector<float>> &noises, const std::vector<float> &rewards, const std::vector<float> &values, const std::vector<std::vector<float>> &policies, std::vector<int> &to_play_batch)
     {
         /*
         Overview:
@@ -429,15 +448,15 @@ namespace tree{
             - policies: the vector of policy logits of each root.
             - to_play_batch: the vector of the player side of each root.
         */
-        for(int i = 0; i < this->root_num; ++i){
+        for (int i = 0; i < this->root_num; ++i)
+        {
             this->roots[i].expand(to_play_batch[i], 0, i, rewards[i], values[i], policies[i]);
             this->roots[i].add_exploration_noise(root_noise_weight, noises[i]);
-
             this->roots[i].visit_count += 1;
         }
     }
 
-    void CRoots::prepare_no_noise(const std::vector<float> &rewards, const std::vector<float> &values, const std::vector<std::vector<float> > &policies, std::vector<int> &to_play_batch)
+    void CRoots::prepare_no_noise(const std::vector<float> &rewards, const std::vector<float> &values, const std::vector<std::vector<float>> &policies, std::vector<int> &to_play_batch)
     {
         /*
         Overview:
@@ -448,7 +467,8 @@ namespace tree{
             - policies: the vector of policy logits of each root.
             - to_play_batch: the vector of the player side of each root.
         */
-        for(int i = 0; i < this->root_num; ++i){
+        for (int i = 0; i < this->root_num; ++i)
+        {
             this->roots[i].expand(to_play_batch[i], 0, i, rewards[i], values[i], policies[i]);
 
             this->roots[i].visit_count += 1;
@@ -464,7 +484,7 @@ namespace tree{
         this->roots.clear();
     }
 
-    std::vector<std::vector<int> > CRoots::get_trajectories()
+    std::vector<std::vector<int>> CRoots::get_trajectories()
     {
         /*
         Overview:
@@ -472,7 +492,7 @@ namespace tree{
         Returns:
             - traj: a vector of node index, which is the current best trajectory from each root.
         */
-        std::vector<std::vector<int> > trajs;
+        std::vector<std::vector<int>> trajs;
         trajs.reserve(this->root_num);
 
         for (int i = 0; i < this->root_num; ++i)
@@ -482,7 +502,7 @@ namespace tree{
         return trajs;
     }
 
-    std::vector<std::vector<int> > CRoots::get_distributions()
+    std::vector<std::vector<int>> CRoots::get_distributions()
     {
         /*
         Overview:
@@ -490,7 +510,7 @@ namespace tree{
         Returns:
             - distribution: a vector of distribution of child nodes in the format of visit count (i.e. [1,3,0,2,5]).
         */
-        std::vector<std::vector<int> > distributions;
+        std::vector<std::vector<int>> distributions;
         distributions.reserve(this->root_num);
 
         for (int i = 0; i < this->root_num; ++i)
@@ -504,7 +524,7 @@ namespace tree{
     // Gumbel Muzero related code
     //*********************************************************
 
-    std::vector<std::vector<float> > CRoots::get_children_values(float discount_factor, int action_space_size)
+    std::vector<std::vector<float>> CRoots::get_children_values(float discount_factor, int action_space_size)
     {
         /*
         Overview:
@@ -513,7 +533,7 @@ namespace tree{
             - discount_factor: the discount_factor of reward.
             - action_space_size: the action space size of environment.
         */
-        std::vector<std::vector<float> > values;
+        std::vector<std::vector<float>> values;
         values.reserve(this->root_num);
 
         for (int i = 0; i < this->root_num; ++i)
@@ -523,7 +543,7 @@ namespace tree{
         return values;
     }
 
-    std::vector<std::vector<float> > CRoots::get_policies(float discount_factor, int action_space_size)
+    std::vector<std::vector<float>> CRoots::get_policies(float discount_factor, int action_space_size)
     {
         /*
         Overview:
@@ -532,10 +552,11 @@ namespace tree{
             - discount_factor: the discount_factor of reward.
             - action_space_size: the action space size of environment.
         */
-        std::vector<std::vector<float> > probs;
+        std::vector<std::vector<float>> probs;
         probs.reserve(this->root_num);
 
-        for(int i = 0; i < this->root_num; ++i){
+        for (int i = 0; i < this->root_num; ++i)
+        {
             probs.push_back(this->roots[i].get_policy(discount_factor, action_space_size));
         }
         return probs;
@@ -557,7 +578,7 @@ namespace tree{
 
     //*********************************************************
     //
-    void update_tree_q(CNode* root, tools::CMinMaxStats &min_max_stats, float discount_factor, int players)
+    void update_tree_q(CNode *root, tools::CMinMaxStats &min_max_stats, float discount_factor, int players)
     {
         /*
         Overview:
@@ -568,42 +589,45 @@ namespace tree{
             - discount_factor: the discount factor of reward.
             - players: the number of players.
         */
-        std::stack<CNode*> node_stack;
+        std::stack<CNode *> node_stack;
         node_stack.push(root);
-//        float parent_value_prefix = 0.0;
-        while(node_stack.size() > 0){
-            CNode* node = node_stack.top();
+        //        float parent_value_prefix = 0.0;
+        while (node_stack.size() > 0)
+        {
+            CNode *node = node_stack.top();
             node_stack.pop();
 
-            if(node != root){
-//                # NOTE: in 2 player mode, value_prefix is not calculated according to the perspective of current player of node,
-//                # but treated as 1 player, just for obtaining the true reward in the perspective of current player of node.
-//                # true_reward = node.value_prefix - (- parent_value_prefix)
-//                float true_reward = node->value_prefix - node->parent_value_prefix;
+            if (node != root)
+            {
+                //                # NOTE: in 2 player mode, value_prefix is not calculated according to the perspective of current player of node,
+                //                # but treated as 1 player, just for obtaining the true reward in the perspective of current player of node.
+                //                # true_reward = node.value_prefix - (- parent_value_prefix)
+                //                float true_reward = node->value_prefix - node->parent_value_prefix;
                 float true_reward = node->reward;
 
                 float qsa;
-                if(players == 1)
+                if (players == 1)
                     qsa = true_reward + discount_factor * node->value();
-                else if(players == 2)
+                else if (players == 2)
                     // TODO(pu):
-                     qsa = true_reward + discount_factor * (-1) * node->value();
+                    qsa = true_reward + discount_factor * (-1) * node->value();
 
                 min_max_stats.update(qsa);
             }
 
-            for(auto a: node->legal_actions){
-                CNode* child = node->get_child(a);
-                if(child->expanded()){
-//                    child->parent_value_prefix = node->value_prefix;
+            for (auto a : node->legal_actions)
+            {
+                CNode *child = node->get_child(a);
+                if (child->expanded())
+                {
+                    //                    child->parent_value_prefix = node->value_prefix;
                     node_stack.push(child);
                 }
             }
-
         }
     }
 
-    void cback_propagate(std::vector<CNode*> &search_path, tools::CMinMaxStats &min_max_stats, int to_play, float value, float discount_factor)
+    void cback_propagate(std::vector<CNode *> &search_path, tools::CMinMaxStats &min_max_stats, int to_play, float value, float discount_factor)
     {
         /*
         Overview:
@@ -618,8 +642,9 @@ namespace tree{
         assert(to_play == -1);
         float bootstrap_value = value;
         int path_len = search_path.size();
-        for(int i = path_len - 1; i >= 0; --i){
-            CNode* node = search_path[i];
+        for (int i = path_len - 1; i >= 0; --i)
+        {
+            CNode *node = search_path[i];
             node->value_sum += bootstrap_value;
             node->visit_count += 1;
 
@@ -631,7 +656,7 @@ namespace tree{
         }
     }
 
-    void cbatch_back_propagate(int current_latent_state_index, float discount_factor, const std::vector<float> &value_prefixs, const std::vector<float> &values, const std::vector<std::vector<float> > &policies, tools::CMinMaxStatsList *min_max_stats_lst, CSearchResults &results, std::vector<int> &to_play_batch)
+    void cbatch_back_propagate(int current_latent_state_index, float discount_factor, const std::vector<float> &value_prefixs, const std::vector<float> &values, const std::vector<std::vector<float>> &policies, tools::CMinMaxStatsList *min_max_stats_lst, CSearchResults &results, std::vector<int> &to_play_batch)
     {
         /*
         Overview:
@@ -646,13 +671,14 @@ namespace tree{
             - results: the search results.
             - to_play_batch: the batch of which player is playing on this node.
         */
-        for(int i = 0; i < results.num; ++i){
+        for (int i = 0; i < results.num; ++i)
+        {
             results.nodes[i]->expand(to_play_batch[i], current_latent_state_index, i, value_prefixs[i], values[i], policies[i]);
             cback_propagate(results.search_paths[i], min_max_stats_lst->stats_lst[i], to_play_batch[i], values[i], discount_factor);
         }
     }
 
-    int cselect_child(CNode* root, tools::CMinMaxStats &min_max_stats, int pb_c_base, float pb_c_init, float discount_factor, float mean_q, int players)
+    int cselect_child(CNode *root, tools::CMinMaxStats &min_max_stats, int pb_c_base, float pb_c_init, float discount_factor, float mean_q, int players)
     {
         /*
         Overview:
@@ -671,24 +697,28 @@ namespace tree{
         float max_score = FLOAT_MIN;
         const float epsilon = 0.000001;
         std::vector<int> max_index_lst;
-        for(auto a: root->legal_actions){
+        for (auto a : root->legal_actions)
+        {
 
-            CNode* child = root->get_child(a);
-            float temp_score = cucb_score(child, min_max_stats, mean_q, root->visit_count - 1,  pb_c_base, pb_c_init, discount_factor, players);
+            CNode *child = root->get_child(a);
+            float temp_score = cucb_score(child, min_max_stats, mean_q, root->visit_count - 1, pb_c_base, pb_c_init, discount_factor, players);
 
-            if(max_score < temp_score){
+            if (max_score < temp_score)
+            {
                 max_score = temp_score;
 
                 max_index_lst.clear();
                 max_index_lst.push_back(a);
             }
-            else if(temp_score >= max_score - epsilon){
+            else if (temp_score >= max_score - epsilon)
+            {
                 max_index_lst.push_back(a);
             }
         }
 
         int action = 0;
-        if(max_index_lst.size() > 0){
+        if (max_index_lst.size() > 0)
+        {
             int rand_index = rand() % max_index_lst.size();
             action = max_index_lst[rand_index];
         }
@@ -699,7 +729,7 @@ namespace tree{
     // Gumbel Muzero related code
     //*********************************************************
 
-    int cselect_root_child(CNode* root, float discount_factor, int num_simulations, int max_num_considered_actions)
+    int cselect_root_child(CNode *root, float discount_factor, int num_simulations, int max_num_considered_actions)
     {
         /*
         Overview:
@@ -714,15 +744,16 @@ namespace tree{
         */
         std::vector<int> child_visit_count;
         std::vector<float> child_prior;
-        for(auto a: root->legal_actions){
-            CNode* child = root->get_child(a);
+        for (auto a : root->legal_actions)
+        {
+            CNode *child = root->get_child(a);
             child_visit_count.push_back(child->visit_count);
             child_prior.push_back(child->prior);
         }
-        assert(child_visit_count.size()==child_prior.size());
+        assert(child_visit_count.size() == child_prior.size());
 
         std::vector<float> completed_qvalues = qtransform_completed_by_mix_value(root, child_visit_count, child_prior, discount_factor);
-        std::vector<std::vector<int> > visit_table = get_table_of_considered_visits(max_num_considered_actions, num_simulations);
+        std::vector<std::vector<int>> visit_table = get_table_of_considered_visits(max_num_considered_actions, num_simulations);
 
         int num_valid_actions = root->legal_actions.size();
         int num_considered = std::min(max_num_considered_actions, num_simulations);
@@ -734,8 +765,10 @@ namespace tree{
         float argmax = -std::numeric_limits<float>::infinity();
         int max_action = root->legal_actions[0];
         int index = 0;
-        for(auto a: root->legal_actions){
-            if(score[index] > argmax){
+        for (auto a : root->legal_actions)
+        {
+            if (score[index] > argmax)
+            {
                 argmax = score[index];
                 max_action = a;
             }
@@ -745,7 +778,7 @@ namespace tree{
         return max_action;
     }
 
-    int cselect_interior_child(CNode* root, float discount_factor)
+    int cselect_interior_child(CNode *root, float discount_factor)
     {
         /*
         Overview:
@@ -758,29 +791,34 @@ namespace tree{
         */
         std::vector<int> child_visit_count;
         std::vector<float> child_prior;
-        for(auto a: root->legal_actions){
-            CNode* child = root->get_child(a);
+        for (auto a : root->legal_actions)
+        {
+            CNode *child = root->get_child(a);
             child_visit_count.push_back(child->visit_count);
             child_prior.push_back(child->prior);
         }
-        assert(child_visit_count.size()==child_prior.size());
+        assert(child_visit_count.size() == child_prior.size());
         std::vector<float> completed_qvalues = qtransform_completed_by_mix_value(root, child_visit_count, child_prior, discount_factor);
         std::vector<float> probs;
-        for (int i=0;i<child_prior.size();i++){
+        for (int i = 0; i < child_prior.size(); i++)
+        {
             probs.push_back(child_prior[i] + completed_qvalues[i]);
         }
         csoftmax(probs, probs.size());
         int visit_count_sum = std::accumulate(child_visit_count.begin(), child_visit_count.end(), 0);
         std::vector<float> to_argmax;
-        for (int i=0;i<probs.size();i++){
-            to_argmax.push_back(probs[i] - (float)child_visit_count[i]/(float)(1+visit_count_sum));
+        for (int i = 0; i < probs.size(); i++)
+        {
+            to_argmax.push_back(probs[i] - (float)child_visit_count[i] / (float)(1 + visit_count_sum));
         }
 
         float argmax = -std::numeric_limits<float>::infinity();
         int max_action = root->legal_actions[0];
         int index = 0;
-        for(auto a: root->legal_actions){
-            if(to_argmax[index] > argmax){
+        for (auto a : root->legal_actions)
+        {
+            if (to_argmax[index] > argmax)
+            {
                 argmax = to_argmax[index];
                 max_action = a;
             }
@@ -812,21 +850,25 @@ namespace tree{
         pb_c *= (sqrt(total_children_visit_counts) / (child->visit_count + 1));
 
         prior_score = pb_c * child->prior;
-        if (child->visit_count == 0){
+        if (child->visit_count == 0)
+        {
             value_score = parent_mean_q;
         }
-        else {
+        else
+        {
             float true_reward = child->reward;
-            if(players == 1)
+            if (players == 1)
                 value_score = true_reward + discount_factor * child->value();
-            else if(players == 2)
+            else if (players == 2)
                 value_score = true_reward + discount_factor * (-child->value());
         }
 
         value_score = min_max_stats.normalize(value_score);
 
-        if (value_score < 0) value_score = 0;
-        if (value_score > 1) value_score = 1;
+        if (value_score < 0)
+            value_score = 0;
+        if (value_score > 1)
+            value_score = 1;
 
         float ucb_value = prior_score + value_score;
         return ucb_value;
@@ -855,24 +897,28 @@ namespace tree{
         results.search_lens = std::vector<int>();
 
         int players = 0;
-        int largest_element = *max_element(virtual_to_play_batch.begin(),virtual_to_play_batch.end()); // 0 or 2
-        if(largest_element==-1)
+        int largest_element = *max_element(virtual_to_play_batch.begin(), virtual_to_play_batch.end()); // 0 or 2
+        if (largest_element == -1)
             players = 1;
         else
             players = 2;
 
-        for(int i = 0; i < results.num; ++i){
+        for (int i = 0; i < results.num; ++i)
+        {
             CNode *node = &(roots->roots[i]);
             int is_root = 1;
             int search_len = 0;
             int action = 0;
             results.search_paths[i].push_back(node);
 
-            while(node->expanded()){
-                if(is_root){
+            while (node->expanded())
+            {
+                if (is_root)
+                {
                     action = cselect_root_child(node, discount_factor, num_simulations, max_num_considered_actions);
                 }
-                else{
+                else
+                {
                     action = cselect_interior_child(node, discount_factor);
                 }
                 is_root = 0;
@@ -885,7 +931,7 @@ namespace tree{
                 search_len += 1;
             }
 
-            CNode* parent = results.search_paths[i][results.search_paths[i].size() - 2];
+            CNode *parent = results.search_paths[i][results.search_paths[i].size() - 2];
 
             results.latent_state_index_in_search_path.push_back(parent->current_latent_state_index);
             results.latent_state_index_in_batch.push_back(parent->batch_index);
@@ -894,7 +940,6 @@ namespace tree{
             results.search_lens.push_back(search_len);
             results.nodes.push_back(node);
             results.virtual_to_play_batchs.push_back(virtual_to_play_batch[i]);
-
         }
     }
 
@@ -911,24 +956,28 @@ namespace tree{
             - input: the vector to be transformed.
             - input_len: the length of input vector.
         */
-        assert (input != NULL);
-        assert (input_len != 0);
+        assert(input != NULL);
+        assert(input_len != 0);
         int i;
         float m;
         // Find maximum value from input array
         m = input[0];
-        for (i = 1; i < input_len; i++) {
-            if (input[i] > m) {
+        for (i = 1; i < input_len; i++)
+        {
+            if (input[i] > m)
+            {
                 m = input[i];
             }
         }
 
         float sum = 0;
-        for (i = 0; i < input_len; i++) {
-            sum += expf(input[i]-m);
+        for (i = 0; i < input_len; i++)
+        {
+            sum += expf(input[i] - m);
         }
 
-        for (i = 0; i < input_len; i++) {
+        for (i = 0; i < input_len; i++)
+        {
             input[i] = expf(input[i] - m - log(sum));
         }
     }
@@ -951,26 +1000,28 @@ namespace tree{
         float weighted_q_sum = 0.0;
         float min_num = -10e7;
 
-        for(unsigned int i = 0;i < child_visit.size();i++)
+        for (unsigned int i = 0; i < child_visit.size(); i++)
             visit_count_sum += child_visit[i];
 
-        for(unsigned int i = 0;i < child_prior.size();i++)
+        for (unsigned int i = 0; i < child_prior.size(); i++)
             // Ensuring non-nan prior
             child_prior[i] = std::max(child_prior[i], min_num);
 
-        for(unsigned int i = 0;i < child_prior.size();i++)
+        for (unsigned int i = 0; i < child_prior.size(); i++)
             if (child_visit[i] > 0)
                 probs_sum += child_prior[i];
 
-        for (unsigned int i = 0;i < child_prior.size();i++)
-            if (child_visit[i] > 0){
+        for (unsigned int i = 0; i < child_prior.size(); i++)
+            if (child_visit[i] > 0)
+            {
                 weighted_q_sum += child_prior[i] * q_values[i] / probs_sum;
             }
 
-        return (raw_value + visit_count_sum * weighted_q_sum) / (visit_count_sum+1);
+        return (raw_value + visit_count_sum * weighted_q_sum) / (visit_count_sum + 1);
     }
 
-    void rescale_qvalues(std::vector<float> &value, float epsilon){
+    void rescale_qvalues(std::vector<float> &value, float epsilon)
+    {
         /*
         Overview:
             Rescale the q value with max-min normalization.
@@ -982,14 +1033,15 @@ namespace tree{
         float min_value = *min_element(value.begin(), value.end());
         float gap = max_value - min_value;
         gap = std::max(gap, epsilon);
-        for (unsigned int i = 0;i < value.size();i++){
-            value[i] = (value[i]-min_value)/gap;
+        for (unsigned int i = 0; i < value.size(); i++)
+        {
+            value[i] = (value[i] - min_value) / gap;
         }
     }
 
-    std::vector<float> qtransform_completed_by_mix_value(CNode *root, std::vector<int> & child_visit, \
-        std::vector<float> & child_prior, float discount_factor, float maxvisit_init, float value_scale, \
-        bool rescale_values, float epsilon)
+    std::vector<float> qtransform_completed_by_mix_value(CNode *root, std::vector<int> &child_visit,
+                                                         std::vector<float> &child_prior, float discount_factor, float maxvisit_init, float value_scale,
+                                                         bool rescale_values, float epsilon)
     {
         /*
         Overview:
@@ -1006,7 +1058,7 @@ namespace tree{
         Returns:
             - completed Q value.
         */
-        assert (child_visit.size() == child_prior.size());
+        assert(child_visit.size() == child_prior.size());
         std::vector<float> qvalues;
         std::vector<float> child_prior_tmp;
 
@@ -1016,27 +1068,31 @@ namespace tree{
         float value = compute_mixed_value(root->raw_value, qvalues, child_visit, child_prior_tmp);
         std::vector<float> completed_qvalue;
 
-        for (unsigned int i = 0;i < child_prior_tmp.size();i++){
-            if (child_visit[i] > 0){
+        for (unsigned int i = 0; i < child_prior_tmp.size(); i++)
+        {
+            if (child_visit[i] > 0)
+            {
                 completed_qvalue.push_back(qvalues[i]);
             }
-            else{
+            else
+            {
                 completed_qvalue.push_back(value);
             }
         }
 
-        if (rescale_values){
-                rescale_qvalues(completed_qvalue, epsilon);
+        if (rescale_values)
+        {
+            rescale_qvalues(completed_qvalue, epsilon);
         }
 
         float max_visit = *max_element(child_visit.begin(), child_visit.end());
         float visit_scale = maxvisit_init + max_visit;
 
-        for (unsigned int i=0;i < completed_qvalue.size();i++){
+        for (unsigned int i = 0; i < completed_qvalue.size(); i++)
+        {
             completed_qvalue[i] = completed_qvalue[i] * visit_scale * value_scale;
         }
         return completed_qvalue;
-
     }
 
     std::vector<int> get_sequence_of_considered_visits(int max_num_considered_actions, int num_simulations)
@@ -1051,32 +1107,35 @@ namespace tree{
             - the considered visit sequence.
         */
         std::vector<int> visit_seq;
-        if(max_num_considered_actions <= 1){
-            for (int i=0;i < num_simulations;i++)
+        if (max_num_considered_actions <= 1)
+        {
+            for (int i = 0; i < num_simulations; i++)
                 visit_seq.push_back(i);
             return visit_seq;
         }
 
         int log2max = std::ceil(std::log2(max_num_considered_actions));
         std::vector<int> visits;
-        for (int i = 0;i < max_num_considered_actions;i++)
+        for (int i = 0; i < max_num_considered_actions; i++)
             visits.push_back(0);
         int num_considered = max_num_considered_actions;
-        while (visit_seq.size() < num_simulations){
+        while (visit_seq.size() < num_simulations)
+        {
             int num_extra_visits = std::max(1, (int)(num_simulations / (log2max * num_considered)));
-            for (int i = 0;i < num_extra_visits;i++){
+            for (int i = 0; i < num_extra_visits; i++)
+            {
                 visit_seq.insert(visit_seq.end(), visits.begin(), visits.begin() + num_considered);
-                for (int j = 0;j < num_considered;j++)
+                for (int j = 0; j < num_considered; j++)
                     visits[j] += 1;
             }
-            num_considered = std::max(2, num_considered/2);
+            num_considered = std::max(2, num_considered / 2);
         }
         std::vector<int> visit_seq_slice;
         visit_seq_slice.assign(visit_seq.begin(), visit_seq.begin() + num_simulations);
         return visit_seq_slice;
     }
 
-    std::vector<std::vector<int> > get_table_of_considered_visits(int max_num_considered_actions, int num_simulations)
+    std::vector<std::vector<int>> get_table_of_considered_visits(int max_num_considered_actions, int num_simulations)
     {
         /*
         Overview:
@@ -1087,8 +1146,9 @@ namespace tree{
         Returns:
             - the table of considered visits.
         */
-        std::vector<std::vector<int> > table;
-        for (int m=0;m < max_num_considered_actions+1;m++){
+        std::vector<std::vector<int>> table;
+        for (int m = 0; m < max_num_considered_actions + 1; m++)
+        {
             table.push_back(get_sequence_of_considered_visits(m, num_simulations));
         }
         return table;
@@ -1110,28 +1170,32 @@ namespace tree{
         */
         float low_logit = -1e9;
         float max_logit = *max_element(logits.begin(), logits.end());
-        for (unsigned int i=0;i < logits.size();i++){
+        for (unsigned int i = 0; i < logits.size(); i++)
+        {
             logits[i] -= max_logit;
         }
         std::vector<float> penalty;
-        for (unsigned int i=0;i < visit_counts.size();i++){
+        for (unsigned int i = 0; i < visit_counts.size(); i++)
+        {
             // Only consider the nodes with specific visit counts
-            if (visit_counts[i]==considered_visit)
+            if (visit_counts[i] == considered_visit)
                 penalty.push_back(0);
             else
                 penalty.push_back(-std::numeric_limits<float>::infinity());
         }
 
-        assert(gumbel.size()==logits.size()==normalized_qvalues.size()==penalty.size());
+        assert(gumbel.size() == logits.size() == normalized_qvalues.size() == penalty.size());
         std::vector<float> score;
-        for (unsigned int i=0;i < visit_counts.size();i++){
+        for (unsigned int i = 0; i < visit_counts.size(); i++)
+        {
             score.push_back(std::max(low_logit, gumbel[i] + logits[i] + normalized_qvalues[i]) + penalty[i]);
         }
 
         return score;
     }
 
-    std::vector<float> generate_gumbel(float gumbel_scale, float gumbel_rng, int shape){
+    std::vector<float> generate_gumbel(float gumbel_scale, float gumbel_rng, int shape)
+    {
         /*
         Overview:
             Generate gumbel vectors.
@@ -1146,7 +1210,7 @@ namespace tree{
         std::extreme_value_distribution<float> d(0, 1);
 
         std::vector<float> gumbel;
-        for (int i = 0;i < shape;i++)
+        for (int i = 0; i < shape; i++)
             gumbel.push_back(gumbel_scale * d(gen));
         return gumbel;
     }

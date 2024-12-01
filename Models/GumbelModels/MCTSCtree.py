@@ -124,9 +124,10 @@ class GumbelMuZeroMCTSCtree(object):
                 network_output = model.recurrent_inference(latent_states, last_actions)
 
                 # TODO: Mask out impossible actions with default mask here
-                default_mask = self.default_mask.repeat(batch_size, 1)
-                inf_mask = torch.clamp(torch.log(default_mask), min=-3.4e38)
-                policy_logits = network_output["policy_logits"] + inf_mask
+                # default_mask = self.default_mask.repeat(batch_size, 1)
+                # inf_mask = torch.clamp(torch.log(default_mask), min=-3.4e38)
+                # policy_logits = network_output["policy_logits"] + inf_mask
+                policy_logits = network_output["policy_logits"]
                 latent_state_batch_in_search_path.append(network_output["hidden_state"].cpu().tolist())
                 # tolist() is to be compatible with cpp datatype.
                 reward_batch = network_output["reward"].reshape(-1).tolist()

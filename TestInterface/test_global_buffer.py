@@ -88,6 +88,7 @@ class GlobalBuffer:
         """
         obs_tensor_batch, action_history_batch, target_value_batch, policy_mask_batch = [], [], [], []
         target_policy_batch, value_mask_batch, position_batch = [], [], []
+        importance_weights = []
         for batch_num in range(self.batch_size):
             # Setting the position gameplay_experiences get and position get next to each other to minimize
             # the number of multiprocessing errors that could occur by having them too far apart.
@@ -102,6 +103,7 @@ class GlobalBuffer:
             target_value_batch.append(value)
             target_policy_batch.append(policy)
             value_mask_batch.append(value_mask)
+            importance_weights.append(1.0)
 
         observation_batch = self.reshape_observation(obs_tensor_batch)
         action_history_batch = np.asarray(action_history_batch)
@@ -109,10 +111,11 @@ class GlobalBuffer:
         value_mask_batch = np.asarray(value_mask_batch).astype('float32')
         target_policy_batch = np.asarray(target_policy_batch).astype('float32')
         policy_mask_batch = np.asarray(policy_mask_batch).astype('float32')
+        importance_weights = np.asarray(importance_weights).astype(np.float32)
 
         data_list = [
             observation_batch, action_history_batch, value_mask_batch, policy_mask_batch, target_value_batch,
-            target_policy_batch
+            target_policy_batch, importance_weights
         ]
         return np.array(data_list, dtype=object)
 

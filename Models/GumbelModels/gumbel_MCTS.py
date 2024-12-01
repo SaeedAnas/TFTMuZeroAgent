@@ -39,7 +39,7 @@ class GumbelMuZero:
         """
         self._collect_model.eval()
         self._collect_mcts_temperature = temperature
-        batch_size = data["observations"]["shop"].shape[0]
+        batch_size = data["action_mask"].shape[0]
         ready_env_id = np.arange(batch_size)
 
         with torch.no_grad():
@@ -50,7 +50,7 @@ class GumbelMuZero:
             reward = network_output["reward"].detach().cpu().numpy()
             latent_state_roots = network_output["hidden_state"].detach().cpu().numpy()
             policy_logits = network_output["policy_logits"].detach().cpu().numpy().tolist()
-            action_mask = np.reshape(data["action_mask"], (batch_size, -1))
+            action_mask = np.reshape(data["action_mask"].cpu().numpy(), (batch_size, -1))
 
             legal_actions = [[i for i, x in enumerate(action_mask[j]) if x == 1.0] for j in range(batch_size)]
 

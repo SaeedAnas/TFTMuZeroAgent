@@ -24,6 +24,13 @@ libdevice.10.bc
 core/ctree/cytree.cpython-39-x86_64-linux-gnu.so
 core/ctree/cytree.cpython-39-darwin.so
 core/ctree/cytree.cp39-win_amd64.pyd
+core/ctree/cytree.cpython-310-darwin.so
+core/muzero_ctree/build
+core/muzero_ctree/cytree.cpython-310-darwin.so
+core/muzero_ctree/cytree.cpp
+core/gumbelctree/build
+core/gumbelctree/gmz_tree.cpython-310-darwin.so
+core/gumbelctree/gmz_tree.cpp
 
 # UI
 Games/
@@ -39,3 +46,4 @@ PoroSight/vite.config.js.timestamp-*
 PoroSight/vite.config.ts.timestamp-*
 PoroSight/bun.lockb
 PoroSight/package-lock.json
+.gitignore

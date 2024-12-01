@@ -59,6 +59,7 @@ class Trainer(object):
 
         policy_mask = torch.from_numpy(policy_mask).to(config.DEVICE)
         weights = torch.from_numpy(importance_weights).to(config.DEVICE)
+        observation = torch.from_numpy(observation["observations"]).to(config.DEVICE)
 
         # I can add the transformed values to tensorboard later if needed
         target_encoded_value = self.encode_target(
@@ -212,10 +213,10 @@ class Trainer(object):
             'episode_info/value_diff',
             torch.max(torch.max(summaries["policy"], 1).values -
                       torch.min(summaries["policy"], 1).values), train_step)
-        self.summary_writer.add_image('policy_scale', torch.sum(torch.reshape(torch.tensor(
-            summaries["target_policy"]).to(config.DEVICE), (-1, 55, 38)), dim=0)[None, :, :], global_step=train_step)
-        self.summary_writer.add_image('policy_preference', torch.mul(torch.mean(torch.reshape(
-            summaries["predicted_policy"], (-1, 55, 38)), dim=0), 100)[None, :, :], global_step=train_step)
+        # self.summary_writer.add_image('policy_scale', torch.sum(torch.reshape(torch.tensor(
+        #     summaries["target_policy"]).to(config.DEVICE), (-1, 55, 38)), dim=0)[None, :, :], global_step=train_step)
+        # self.summary_writer.add_image('policy_preference', torch.mul(torch.mean(torch.reshape(
+        #     summaries["predicted_policy"], (-1, 55, 38)), dim=0), 100)[None, :, :], global_step=train_step)
 
         self.summary_writer.flush()
 
